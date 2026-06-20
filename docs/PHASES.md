@@ -6,7 +6,7 @@ Phased delivery optimized for **ROI** and **seamless linking**: each phase adds 
 
 **Confirmed stack:** TypeScript/Node · Postgres-only (data + queue + pgvector) · self-hosted Docker · literal MCP for Notion writes · provider-agnostic LLM · text confirmation in Slack · credential profiles · per-project Notion `field_map`.
 
-See [CONTEXT.md](../CONTEXT.md) · [CREDENTIALS.md](CREDENTIALS.md) · [NOTION.md](NOTION.md)
+See [CONTEXT.md](../CONTEXT.md) · [CREDENTIALS.md](CREDENTIALS.md) · [NOTION.md](NOTION.md) · [DECISIONS.md](DECISIONS.md)
 
 ---
 

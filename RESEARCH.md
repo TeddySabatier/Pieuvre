@@ -37,6 +37,7 @@ Legend: ✅ Decided · 🔶 Recommended default · ❓ Needs spike
 | Slack scope | **Single workspace** V0 |
 | GitHub scope | **Single org** V0 — one token, repos in project YAML |
 | Implementation | **7 phases** — see [docs/PHASES.md](docs/PHASES.md) |
+| Decision log | [docs/DECISIONS.md](docs/DECISIONS.md) |
 
 ---
 

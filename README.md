@@ -6,6 +6,8 @@
 
 **Implementation plan:** [docs/PHASES.md](docs/PHASES.md) — 7 phases (~11–12 weeks), built for seamless linking between ingest → search → answer → enrich → task.
 
+**Decision log:** [docs/DECISIONS.md](docs/DECISIONS.md) — all planning Q&A answers in one place.
+
 **Domain glossary:** [CONTEXT.md](CONTEXT.md)
 
 **Configuration:** [docs/CREDENTIALS.md](docs/CREDENTIALS.md) · [docs/NOTION.md](docs/NOTION.md) · [docs/LLM.md](docs/LLM.md) · [docs/RETENTION.md](docs/RETENTION.md)
