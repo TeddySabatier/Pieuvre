@@ -1,100 +1,363 @@
-# Research topics
+# Research & technical decisions
 
-Open questions that need investigation before or during implementation.
+Tracks what is **decided**, what has a **recommended default**, and what still needs a **spike or POC** before implementation.
+
+Legend: ✅ Decided · 🔶 Recommended default · ❓ Needs spike
 
 ---
 
-## 1. Slack real-time monitoring
+## Summary of confirmed V0 choices
 
-- What Slack API surface is best for continuous channel monitoring: Events API (webhook push) vs Socket Mode (persistent WebSocket)?
-- Rate limits and best-practice message buffering.
-- How to reliably capture thread context (parent + all replies) as a single unit of analysis.
-- Scopes needed for a Slack bot that reads channels, posts in threads, and sends DMs.
+| Topic | Decision |
+|---|---|
+| Runtime | TypeScript / Node.js |
+| Write actions | Literal Model Context Protocol (MCP) tools |
+| Deployment | Self-hosted (Docker) |
+| LLM | Provider-agnostic via config |
+| Read connectors | Thin adapters behind shared cache/staleness core |
+| Database | PostgreSQL + pgvector (recommended — see §4) |
+| Slack ingress | Events API + HTTP webhook (recommended — see §1) |
+| Tracing | LangFuse self-hosted or LangSmith (recommended — see §7) |
 
-## 2. GitHub read-only connector
+---
 
-- Which GitHub API (REST vs GraphQL) is more efficient for bulk metadata reads (issues, PRs, file last-modified)?
-- Webhook events available for event-driven cache invalidation (push, issue update, PR update).
-- How to handle GitHub rate limits with a shared token across multiple projects.
-- Code indexing: options for chunking and embedding source files for semantic search.
+## 1. Slack real-time monitoring ✅ 🔶
 
-## 3. Notion connector
+**Status:** Direction set; implementation details need spike.
 
-- Notion API capabilities and limitations for reading databases, pages, and blocks.
-- How to detect page updates reliably (Notion does not provide a native webhook; polling vs third-party).
-- Notion database schema design for tasks created by Pieuvre (fields, relations, rollups).
-- Write API: creating and updating pages/database entries, and known edge cases.
+**Recommended V0 approach:**
 
-## 4. RAG and knowledge graph
+- **Events API + HTTP webhook** as primary ingress (push-based, fits self-hosted Docker behind reverse proxy).
+- **Socket Mode** only if outbound HTTPS from the host is blocked — adds a persistent WebSocket worker.
+- Buffer incoming events in a lightweight queue (Redis or Postgres `job` table) to absorb bursts and respect rate limits.
+- Model a Slack **thread** (parent + replies) as one analysis unit; store `thread_ts` as the stable resource ID.
 
-- Vector database options for storing embeddings with source metadata (Pinecone, pgvector, Qdrant, Weaviate).
-- Chunking strategies for Slack threads, Notion pages, and GitHub files.
-- How to represent the per-project skeleton + cross-project link layer as a graph (property graph vs RDF vs adjacency tables in Postgres).
-- Hybrid search (keyword + vector) for retrieval with exact source citation.
-- Embedding model selection: trade-off between cost, latency, and quality for code + prose mixed content.
+**Scopes to confirm during Slack app registration:**
 
-## 5. Cache and freshness framework
+- `channels:history`, `channels:read` — read monitored channels
+- `chat:write` — in-thread replies
+- `im:write` — private escalation DMs
+- `users:read` — resolve mention → user for ownership routing
 
-- ETag and `Last-Modified` support on Slack, GitHub, and Notion APIs (which headers each actually returns).
-- Canonical content hashing: best practices for normalizing JSON payloads before hashing (ordering, field exclusion).
-- Schema design for the unified resource cache table (lifecycle states, version markers, dependency graph for derived artifacts).
-- How to propagate invalidation from a source resource to derived embeddings/summaries efficiently.
+**Spike needed ❓**
 
-## 6. Confidence scoring and agent design
+- [ ] Verify Events API delivery reliability behind your reverse proxy (nginx/Caddy + TLS).
+- [ ] Measure rate-limit headroom for continuous monitoring across N channels.
+- [ ] Confirm thread-reply event ordering (`message` + `message.replied` handling).
 
-- Prompt design for a classification + confidence agent using a modern LLM (GPT-4o, Claude 3.x, etc.).
-- How to structure a chain-of-thought that outputs a structured confidence score alongside an answer.
-- When to add hard-coded early returns on top of prompt-driven judgment (threshold calibration from traces).
-- Multi-agent vs single-agent architecture: one orchestrator or specialized sub-agents per task type.
+---
 
-## 7. Tracing and observability
+## 2. GitHub read-only connector ✅ 🔶
 
-- LangSmith integration: what it captures by default vs what needs custom instrumentation.
-- Alternatives: LangFuse, Arize Phoenix, or a custom OpenTelemetry pipeline.
-- Schema for Pieuvre's internal audit trace (step, input, output, confidence, sources used, action taken).
-- How to surface traces to the internal team (internal dashboard vs direct LangSmith UI).
+**Status:** Read-only confirmed; sync strategy recommended.
 
-## 8. Prompt configuration versioning
+**Recommended V0 approach:**
 
-- GitHub file watching: using the GitHub API + webhooks to detect prompt file changes.
-- Cache invalidation flow when a prompt file changes (what downstream state needs to be cleared).
-- Format for per-project and per-channel instruction files (YAML, TOML, Markdown front-matter).
-- Access control: who can merge changes to prompt files and what review process is needed.
+- **REST API** for metadata probes (`GET` with `If-None-Match` / `If-Modified-Since` where supported).
+- **GitHub webhooks** (`issues`, `pull_request`, `push`) for event-driven cache invalidation.
+- Index: issues, PRs, README/docs, and selectively source files (respect `.pieuvreignore` or CODEOWNERS paths).
+- Shared token with per-repo scope; track `X-RateLimit-*` headers in adapter metrics.
 
-## 9. MCP connector design
+**Code indexing ❓**
 
-- MCP protocol specification: message format, tool registration, transport layer.
-- How to expose Notion write actions and future connectors as MCP tools.
-- Error handling and rollback when an MCP tool call fails mid-flow.
-- Security model: authentication, authorization, and scope isolation per connector.
+- [ ] Spike: chunk size for TypeScript/Python mixed repos (512–1024 token chunks, overlap 10–15%).
+- [ ] Spike: embed file path + symbol name in chunk metadata for citation backlinks.
+- [ ] Defer full-repo embedding on every push — invalidate + re-index only changed files.
 
-## 10. Project identification and routing
+**GraphQL bulk backfill:** defer until REST backfill proves too slow (>10 repos or >50k files).
 
-- Best approach to map a Slack message to one or more projects when content is ambiguous.
-- How to represent channel-to-project default mappings in the prompt config files.
-- Handling messages that span multiple projects (cross-project task linking).
+---
 
-## 11. Escalation and ownership mapping
+## 3. Notion connector ✅ 🔶
 
-- How to build and maintain the competent-employee map (GitHub CODEOWNERS + Notion page ownership + manual overrides).
-- Slack DM API for private escalation messages.
-- How to link back to the original Slack thread from a private DM in a navigable way.
+**Status:** Create + update confirmed; webhook gap acknowledged.
 
-## 12. Open coding / axial coding for "too complex" threshold
+**Recommended V0 approach:**
 
-- Methodology: record agent traces, run open coding sessions to identify patterns, define axial categories.
-- Tooling: what trace format makes open coding easiest (JSONL, structured log, LangSmith export).
-- Expected output: a taxonomy of operation complexity levels that feeds back into agent prompt and hard-coded guards.
+- **Polling on stale** (not fixed global interval): when cache marks a Notion page stale, adapter fetches metadata and revalidates.
+- **Content hash fallback** — Notion's `last_edited_time` is reliable enough as primary validator; hash diff for block-level silent changes.
+- Writes exclusively through **Notion MCP tool** after human confirmation in Slack.
 
-## 13. Data retention and privacy
+**Spike needed ❓**
 
-- What raw Slack/GitHub/Notion content can legally be stored, for how long, under which jurisdictions.
-- Minimal-storage principle: store only normalized extracts + references, avoid raw payload caching unless strictly necessary.
-- Retention windows per resource type; deletion cascade when a source resource is deleted.
+- [ ] Map Notion database schema once workspace is chosen (deferred config item).
+- [ ] Test block-level update API for partial task field updates vs full page replace.
+- [ ] Confirm relation/rollup fields needed for cross-link display in Notion.
 
-## 14. Initial broad scan (setup phase)
+**Known limitation:** No native Notion webhook — polling + hash is the pragmatic V0 path.
 
-- How to efficiently backfill Slack channel history, GitHub repo content, and Notion workspace on first connection.
-- Parallelism and rate-limit budgeting for the setup scan.
-- Progress reporting and resumability if the scan is interrupted.
-- How to gate the admin-triggered full rescan (cost estimate before execution, confirmation step).
+---
+
+## 4. RAG and knowledge graph ✅ 🔶
+
+**Status:** Architecture decided; store and embedding model need POC.
+
+**Decided:**
+
+- Per-project skeleton + explicit cross-project links (not monolithic global graph).
+- Hybrid retrieval (keyword + vector) with exact source ID return for Slack backlinks.
+- Derived artifacts invalidated with source resource (shared cache framework).
+
+**Recommended V0 store:** PostgreSQL + pgvector
+
+| Option | Fit for Pieuvre V0 |
+|---|---|
+| **PostgreSQL + pgvector** ✅ | Single DB for resources, graph edges, embeddings, traces — simplest self-hosted ops |
+| Pinecone / Qdrant | Adds another service; consider only if vector scale exceeds ~1M chunks |
+| Redis Stack | Fast but in-memory cost; poor fit for durable audit trail co-location |
+
+**Spike needed ❓**
+
+- [ ] Benchmark pgvector recall@k on a sample repo + Notion export.
+- [ ] Define `CrossLink` edge schema and adjacency query patterns (recursive CTE vs materialized paths).
+- [ ] Pick default embedding model via config (e.g. `text-embedding-3-small` vs open-source `nomic-embed`).
+
+---
+
+## 5. Cache and freshness framework ✅
+
+**Status:** Fully specified in README. Implementation-ready.
+
+**Adapter contract:**
+
+```typescript
+interface ResourceMetadata {
+  resourceId: string;
+  sourceType: 'slack' | 'github' | 'notion';
+  updatedAt?: string;       // ISO 8601
+  versionMarker?: string;   // ETag, revision, sync token
+}
+
+interface SourceAdapter {
+  getMetadata(id: string): Promise<ResourceMetadata>;
+  getCanonicalContent(id: string): Promise<string>;  // normalized for hashing
+}
+```
+
+**Validator support by source (verified):**
+
+| Source | Primary validator | Hash fallback |
+|---|---|---|
+| GitHub REST | `ETag` header + `updated_at` field | Yes |
+| Notion | `last_edited_time` | Yes (block content) |
+| Slack | `ts` + edited timestamp | Yes (message text) |
+
+**Remaining implementation tasks:**
+
+- [ ] Unified `resources` table with lifecycle enum: `fresh | stale | revalidated | invalidated | missing`.
+- [ ] Dependency table linking source resources → embeddings/summaries for cascade invalidation.
+- [ ] Admin-only full rescan: cost estimate (resource count × avg fetch) before execution.
+
+---
+
+## 6. Agent design and confidence ✅ 🔶
+
+**Status:** V0 approach decided; prompt structure needs iteration.
+
+**Decided:**
+
+- Single orchestrator agent in V0 (not multi-agent swarm).
+- Prompt-driven confidence first; hard-coded guards added later from trace analysis.
+- Structured output: `{ answer, confidence, sources[], proposed_actions[], clarification_needed }`.
+
+**Recommended V0 pattern:**
+
+- Provider-agnostic LLM client (swap OpenAI / Anthropic / local via env config).
+- System prompt = core instructions + layered project/channel config from GitHub cache.
+- Retrieval context injected as numbered sources; agent must cite by source ID.
+
+**Spike needed ❓**
+
+- [ ] Calibrate confidence rubric in prompt (what counts as "confident enough to reply publicly").
+- [ ] Test classification accuracy on 20–30 real Slack messages from your channels.
+- [ ] Define JSON schema for structured agent output (Zod validation).
+
+---
+
+## 7. Tracing and observability ✅ 🔶
+
+**Status:** LangSmith-like requirement confirmed; tooling choice recommended.
+
+**Recommended V0 approach:**
+
+| Option | Pros | Cons |
+|---|---|---|
+| **LangFuse (self-hosted)** ✅ | Fits self-hosted deployment; full data control | Extra Docker service |
+| LangSmith (cloud) | Best UX, zero ops | Data leaves your infra |
+| Custom OTel + Postgres | Maximum control | Most build effort |
+
+**Trace schema (minimum):**
+
+```
+trace_id, slack_thread_ts, started_at
+steps[]: { name, input, output, latency_ms, model, tokens }
+confidence, sources_used[], actions_taken[], escalation_triggered
+```
+
+**Spike needed ❓**
+
+- [ ] Deploy LangFuse alongside Pieuvre in docker-compose.
+- [ ] Wire trace export from agent orchestrator and MCP tool calls.
+
+---
+
+## 8. Prompt configuration versioning ✅ 🔶
+
+**Status:** GitHub-canonical + DB cache decided.
+
+**Recommended V0 format:** YAML with Markdown body for instruction prose.
+
+```yaml
+# prompts/projects/acme.yaml
+project_id: acme
+channels: ["#acme-dev", "#acme-support"]
+owners:
+  backend: "@alice"
+  frontend: "@bob"
+instructions: |
+  Acme uses Notion database X for bugs...
+```
+
+**Invalidation flow:**
+
+1. GitHub webhook (`push` on `prompts/**`) → invalidate config cache entries.
+2. Re-parse files → update `projects` table.
+3. No re-index of external resources needed (prompt change ≠ source change).
+
+**Spike needed ❓**
+
+- [ ] Confirm webhook delivery to self-hosted Pieuvre (GitHub → your VPS).
+- [ ] Define merge/review policy for prompt file changes (CODEOWNERS on `prompts/`).
+
+---
+
+## 9. MCP connector design ✅
+
+**Status:** Literal MCP confirmed for write path.
+
+**Recommended V0 architecture:**
+
+```
+Agent orchestrator
+    └── MCP client (stdio or SSE transport)
+            └── notion-mcp-server   (create_page, update_page, query_database)
+            └── (future) github-mcp-server
+```
+
+**Decisions:**
+
+- Read adapters stay **in-process TypeScript** (latency-sensitive, high volume).
+- Write actions go through **MCP tool calls** (isolation, auditability, swappable servers).
+- Each MCP tool call logged in trace with `tool_name`, `input`, `output`, `error`.
+
+**Spike needed ❓**
+
+- [ ] Evaluate existing Notion MCP server vs thin custom wrapper.
+- [ ] Define rollback: if MCP create succeeds but Slack confirmation fails, mark task as `pending_confirmation` in DB.
+- [ ] MCP auth: token per server, scoped to Notion integration secret.
+
+---
+
+## 10. Project identification and routing ✅
+
+**Status:** Decided — content primary, channel as hint, layered prompts.
+
+**Implementation notes:**
+
+- `prompts/projects/*.yaml` declares `channels[]` → default project hint.
+- Classifier outputs `project_candidates[]` with scores; single project if score gap > threshold, else ask in-thread.
+- Cross-project messages create `CrossLink` edges rather than forcing a single project assignment.
+
+No further research required before V0 — tune thresholds from traces.
+
+---
+
+## 11. Escalation and ownership mapping ✅ 🔶
+
+**Status:** Decided — manual + inferred, private DM first.
+
+**Recommended ownership sources (priority order):**
+
+1. Manual override in `prompts/projects/*.yaml` (`owners:` map).
+2. GitHub `CODEOWNERS` for code-related questions.
+3. Notion task assignee / creator for task-status questions.
+4. Fallback: project default owner from config.
+
+**Spike needed ❓**
+
+- [ ] Slack DM format with deep link back to thread (`slack://channel?team=...&id=...`).
+- [ ] Handle owner not in Slack workspace (fallback to public @mention in thread).
+
+---
+
+## 12. "Too complex" threshold — deferred ⏸
+
+**Status:** Explicitly deferred until trace corpus exists.
+
+**Planned methodology:**
+
+1. Record 50+ agent runs covering create, update, merge, regroup scenarios.
+2. Open coding on failure/delegation patterns.
+3. Axial categories → complexity levels → prompt guards + optional hard-coded blocks.
+
+**Preparation (can start now):**
+
+- [ ] Ensure trace schema captures `delegation_reason` field.
+- [ ] Tag traces where human overrode or rejected agent proposal.
+
+---
+
+## 13. Data retention and privacy ✅ 🔶
+
+**Status:** Minimal-storage principle decided.
+
+**Recommended V0 policy:**
+
+| Data | Store | Retention |
+|---|---|---|
+| Normalized extracts | Yes | Until source deleted or manual purge |
+| Raw payload snapshots | Only if needed for latency/audit | Discard on confirmed staleness + change |
+| Embeddings | Yes | Cascade-delete with source resource |
+| Traces | Yes | 90 days default (configurable) |
+| Slack message text | Normalized extract only | Re-fetch from Slack API if stale |
+
+**Spike needed ❓**
+
+- [ ] Review employer Slack/GitHub/Notion ToS for bot storage of message content.
+- [ ] Add `resource_deleted` webhook handler to cascade purge.
+
+---
+
+## 14. Initial broad scan (setup phase) ✅ 🔶
+
+**Status:** Manual trigger, broader scan, admin-only full rescan — decided.
+
+**Recommended implementation:**
+
+- CLI command: `pieuvre scan --project acme --sources slack,github,notion`
+- Progress UI: structured logs + `scan_jobs` table (resumable checkpoints).
+- Rate-limit budget: sequential source scan, parallel within source up to API limit − 20% headroom.
+- Full rescan gate: admin runs `pieuvre rescan --dry-run` first → shows estimated API calls + duration → confirm.
+
+**Spike needed ❓**
+
+- [ ] Measure backfill time for your actual channel history + repo size.
+- [ ] Define checkpoint granularity (per channel, per repo, per Notion database).
+
+---
+
+## Research backlog (priority order)
+
+| Priority | Item | Type |
+|---|---|---|
+| P0 | Slack Events API behind self-hosted reverse proxy | Spike |
+| P0 | PostgreSQL + pgvector schema + hybrid retrieval POC | Spike |
+| P0 | Notion MCP server selection + write flow | Spike |
+| P1 | LangFuse docker-compose + trace wiring | Spike |
+| P1 | Agent structured output schema + 20-message classification test | Spike |
+| P1 | GitHub webhook + selective file re-index | Implementation |
+| P2 | Embedding model benchmark on your content | Spike |
+| P2 | Open coding prep (`delegation_reason` in traces) | Preparation |
+| ⏸ | Notion workspace/schema mapping | Blocked on config |
+| ⏸ | Task template fields | Blocked on config |
+| ⏸ | Task confirmation authorization | Blocked on config |

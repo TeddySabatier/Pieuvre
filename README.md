@@ -117,8 +117,9 @@ graph TB
         NO_A[Notion adapter]
     end
 
-    subgraph write["Write gateway"]
-        MCP[Action tools — MCP-style]
+    subgraph write["Write path (MCP)"]
+        MCP[MCP client]
+        NO_MCP[Notion MCP server]
     end
 
     subgraph data["Pieuvre DB"]
@@ -146,7 +147,8 @@ graph TB
     TRACE --> AUD
 
     ORCH --> MCP
-    MCP --> NO_A
+    MCP --> NO_MCP
+    NO_MCP --> N[Notion API]
 
     ORCH --> SL_A
     CFG --> ORCH
@@ -161,7 +163,7 @@ graph TB
 | **Knowledge graph** | Per-project skeletons; cross-project links when evidence exists. |
 | **Hybrid retrieval** | Keyword + vector search over indexed resources; returns exact source IDs for citation. |
 | **Agent orchestrator** | Classification, reasoning, confidence, clarification, escalation, task proposals. |
-| **Write gateway** | All mutations (Notion create/update, future integrations) behind a tool interface. |
+| **MCP client** | All mutations (Notion create/update, future integrations) via literal MCP tool calls. |
 | **Trace recorder** | Step-level audit: inputs, outputs, confidence, sources used, actions taken. |
 
 ---
@@ -180,7 +182,7 @@ Slack, GitHub, and Notion remain decoupled from each other. Pieuvre syncs them i
 
 External systems are never queried on every user message when a fresh cached copy exists.
 
-### 2. Read adapters + write gateway (bridge pattern)
+### 2. Read adapters + MCP write path (bridge pattern)
 
 **Read path:** thin adapters per source implementing:
 
@@ -191,7 +193,7 @@ interface SourceAdapter {
 }
 ```
 
-**Write path:** mutations go through a **write gateway** exposing tool-style actions (MCP-compatible interface). The agent never calls Notion/Slack/GitHub write APIs directly.
+**Write path:** mutations go through **literal MCP servers** (starting with Notion). The agent calls MCP tools; it never hits Notion/Slack/GitHub write APIs directly. Read adapters stay in-process for latency.
 
 This keeps connector code small, testable, and swappable.
 
@@ -243,20 +245,20 @@ Escalation is **private DM first**, always linking back to the original Slack th
 
 ---
 
-## Recommended V0 stack
+## V0 stack (confirmed)
 
-> Pending your confirmation on runtime, deployment, and LLM provider. Defaults below optimize for a small team, auditable RAG, and MCP ecosystem fit.
-
-| Concern | Recommended default | Rationale |
+| Concern | Choice | Rationale |
 |---|---|---|
-| **Language** | TypeScript / Node.js | Strong Slack + MCP SDK support; one runtime for adapters, agent, and gateway. |
-| **Database** | PostgreSQL + pgvector | Single store for resources, graph edges, embeddings, traces, and config cache. |
-| **Embeddings** | Provider-agnostic via config | Start with a cost-effective model; swap without schema changes. |
-| **Slack ingress** | Events API + HTTP webhook | Push-based, no persistent WebSocket process required. |
-| **GitHub sync** | REST for metadata + webhooks for invalidation | GraphQL optional later for bulk backfill optimization. |
-| **Notion sync** | Polling + content hash (no native webhook) | Hash diff catches silent edits; poll interval tuned per resource type. |
-| **Tracing** | LangFuse or LangSmith | LangSmith-like UX out of the box; self-host LangFuse if data residency matters. |
-| **Deployment** | Single Docker service + managed Postgres | Simplest ops for a small internal team. |
+| **Language** | TypeScript / Node.js | Slack + MCP SDK fit; one runtime for adapters, agent, and MCP client. |
+| **Write actions** | Literal MCP tools | Isolated, auditable Notion mutations via MCP servers. |
+| **LLM** | Provider-agnostic via config | Swap OpenAI / Anthropic / others without code changes. |
+| **Deployment** | Self-hosted Docker | Full data control; docker-compose on VPS/homelab. |
+| **Database** | PostgreSQL + pgvector | Single store for resources, graph edges, embeddings, traces, config cache. |
+| **Embeddings** | Provider-agnostic via config | Swap embedding model without schema changes. |
+| **Slack ingress** | Events API + HTTP webhook | Push-based; reverse proxy terminates TLS. |
+| **GitHub sync** | REST metadata + webhooks | Event-driven invalidation; GraphQL bulk backfill deferred. |
+| **Notion sync** | Poll-on-stale + content hash | No native webhook; hash catches block-level edits. |
+| **Tracing** | LangFuse (self-hosted) | LangSmith-like traces without leaving your infra. |
 
 ---
 
@@ -303,7 +305,7 @@ Trace
 | Non-technical prompt editing | Notion UI for instructions — later. |
 | Prioritization | Weekly polls, cost/priority scoring — later. |
 | GitHub writes | Issue/PR creation — post-V0. |
-| Production deployment target | Confirm self-hosted vs managed cloud. |
+| GitHub MCP server | Read-only in V0; write MCP deferred. |
 
 ---
 
@@ -319,7 +321,7 @@ pieuvre/
 │   ├── retrieval/           # Hybrid search + citation assembly
 │   ├── agent/               # Orchestrator, classifier, confidence
 │   └── traces/              # Audit trail recorder
-├── gateway/                 # Write-action tools (MCP-compatible)
+├── mcp/                     # MCP client + server configs (Notion MCP, future)
 ├── db/                      # Schema, migrations
 ├── prompts/                 # Core + per-project/channel config (also in GitHub)
 └── config/                  # Channel lists, ownership maps, staleness policies
