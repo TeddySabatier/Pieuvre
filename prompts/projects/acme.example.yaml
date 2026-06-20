@@ -1,0 +1,44 @@
+# Example project config — no secrets. Copy and customize per project.
+
+project_id: acme
+
+credential_profile:
+  slack: slack_main
+  github: github_org
+  notion: notion_ws_main
+
+slack_channels:
+  - "#acme-dev"
+
+github_repos:
+  - "acme/backend"
+
+notion:
+  task_database_id: "00000000-0000-0000-0000-000000000000"
+  field_map:
+    title: Title
+    status: Status
+    description: Description
+    priority: Priority
+    assignee: Assignee
+    slack_thread: Slack thread
+    project_id: Project
+
+owners:
+  default: "@alice"
+  notion_admin: "@alice"
+  # Slack user IDs for owner checks (confirm authorization)
+  slack_ids:
+    alice: U01AAA
+    bob: U01BBB
+
+# Who may confirm/cancel Notion task writes (text in thread)
+task_confirmation:
+  allowed_roles:
+    - requester
+    - project_owners
+  # Alternatives: requester_only | project_owners_only | thread_participants
+  # Default if omitted: [requester, project_owners]
+
+instructions: |
+  Project-specific agent instructions (layered on prompts/core.yaml).

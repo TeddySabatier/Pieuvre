@@ -4,6 +4,12 @@
 
 **Primary users (V0):** you and your workmates (small internal team).
 
+**Implementation plan:** [docs/PHASES.md](docs/PHASES.md) — 7 phases (~11–12 weeks), built for seamless linking between ingest → search → answer → enrich → task.
+
+**Domain glossary:** [CONTEXT.md](CONTEXT.md)
+
+**Configuration:** [docs/CREDENTIALS.md](docs/CREDENTIALS.md) · [docs/NOTION.md](docs/NOTION.md) · [docs/LLM.md](docs/LLM.md)
+
 ---
 
 ## What it does
@@ -243,6 +249,13 @@ Escalation is **private DM first**, always linking back to the original Slack th
 - **V0:** prompt-driven agent outputs answer + confidence rationale; reply directly when confident.
 - **Later:** hard-coded early returns calibrated from trace analysis (open coding → axial coding on recorded runs).
 
+### 8. Projects, credentials, and Notion
+
+- Each **project** has independent Slack channels, GitHub repos, and Notion database — linked via CrossLinks, not shared globals.
+- **Credential profiles** (`slack_main`, `github_org`, `notion_ws_main`) — project YAML references profiles; secrets in env only. [CREDENTIALS.md](docs/CREDENTIALS.md)
+- **Notion A+:** canonical task model + per-project `field_map` + hybrid drift recovery (thread prompt → admin DM). [NOTION.md](docs/NOTION.md)
+- **MCP** hosts Notion write tokens; Pieuvre read adapters use the same integration token from env.
+
 ---
 
 ## V0 stack (confirmed)
@@ -251,14 +264,18 @@ Escalation is **private DM first**, always linking back to the original Slack th
 |---|---|---|
 | **Language** | TypeScript / Node.js | Slack + MCP SDK fit; one runtime for adapters, agent, and MCP client. |
 | **Write actions** | Literal MCP tools | Isolated, auditable Notion mutations via MCP servers. |
-| **LLM** | Provider-agnostic via config | Swap OpenAI / Anthropic / others without code changes. |
+| **LLM** | Reasoning tiers via config | Provider-agnostic; tier per step. See [LLM.md](docs/LLM.md). |
 | **Deployment** | Self-hosted Docker | Full data control; docker-compose on VPS/homelab. |
-| **Database** | PostgreSQL + pgvector | Single store for resources, graph edges, embeddings, traces, config cache. |
-| **Embeddings** | Provider-agnostic via config | Swap embedding model without schema changes. |
+| **Database** | PostgreSQL only | Data, job queue, pgvector, traces — no Redis in V0. |
+| **Retrieval** | C+ phased | BM25 + graph (Phase 2); pgvector on prose only — not full repo embed. |
+| **GitHub code context** | PR enrichment comments | Scan agent (Cursor/Claude Code) posts `#pieuvre-enrichment`; Pieuvre ingests. |
+| **Task confirmation** | Plain text in thread | Thread FSM; agent interprets yes/no — buttons deferred. |
 | **Slack ingress** | Events API + HTTP webhook | Push-based; reverse proxy terminates TLS. |
-| **GitHub sync** | REST metadata + webhooks | Event-driven invalidation; GraphQL bulk backfill deferred. |
-| **Notion sync** | Poll-on-stale + content hash | No native webhook; hash catches block-level edits. |
-| **Tracing** | LangFuse (self-hosted) | LangSmith-like traces without leaving your infra. |
+| **Tracing** | Postgres traces (Phase 0–6) | LangFuse optional post Phase 6. |
+| **Credentials** | Profile indirection + `.env` V0 | Projects ref profiles; MCP holds Notion write token. See [CREDENTIALS.md](docs/CREDENTIALS.md). |
+| **Notion tasks** | Per-project DB + canonical `field_map` | Schema drift: hybrid Slack prompt. See [NOTION.md](docs/NOTION.md). |
+| **Embeddings** | Cloud API (Phase 2) | Provider via config; vectors in pgvector. |
+| **Admin ops** | Global env list | `PIEUVRE_ADMIN_SLACK_IDS` for rescan / admin CLI. |
 
 ---
 
@@ -298,9 +315,8 @@ Trace
 
 | Item | Notes |
 |---|---|
-| Notion workspace / default database | Configure before first write integration. |
-| Task template and required fields | Template + fill instructions to be provided. |
-| Who may confirm task creation | Authorization rules TBD. |
+| Task template (Notion DB layout) | Canonical fields defined; copy template per project when onboarding. |
+| Task confirmation auth | **Per-project** `task_confirmation.allowed_roles` in YAML — see [NOTION.md](docs/NOTION.md). |
 | "Too complex" operation threshold | Derive from trace analysis (open → axial coding). |
 | Non-technical prompt editing | Notion UI for instructions — later. |
 | Prioritization | Weekly polls, cost/priority scoring — later. |
@@ -324,7 +340,7 @@ pieuvre/
 ├── mcp/                     # MCP client + server configs (Notion MCP, future)
 ├── db/                      # Schema, migrations
 ├── prompts/                 # Core + per-project/channel config (also in GitHub)
-└── config/                  # Channel lists, ownership maps, staleness policies
+└── config/                  # credential-profiles.yaml, examples
 ```
 
 ---
@@ -339,3 +355,19 @@ pieuvre/
 | Auditability | Every agent run has a replayable trace for internal tuning |
 
 Task creation polish, prioritization automation, and authorization hardening are explicitly secondary in V0.
+
+---
+
+## Implementation phases (summary)
+
+| Phase | Focus | Milestone |
+|---|---|---|
+| **0** | Foundation | Docker, Postgres, queue, stable seam interfaces |
+| **1** | Ingest | Slack/GitHub/Notion → `resources` table |
+| **2** | Link | BM25 + pgvector + CrossLinks |
+| **3** | Answer | Cited replies in Slack — **daily-usable MVP** |
+| **4** | Enrich | PR comment ingest from scan agent |
+| **5** | Task | Text confirm → Notion MCP |
+| **6** | Harden | Full staleness, admin rescan, multi-project polish |
+
+Full flows, schemas, and exit criteria: [docs/PHASES.md](docs/PHASES.md).

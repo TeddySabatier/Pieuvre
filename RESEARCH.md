@@ -13,11 +13,20 @@ Legend: ✅ Decided · 🔶 Recommended default · ❓ Needs spike
 | Runtime | TypeScript / Node.js |
 | Write actions | Literal Model Context Protocol (MCP) tools |
 | Deployment | Self-hosted (Docker) |
-| LLM | Provider-agnostic via config |
+| LLM | **Reasoning tiers** — provider-agnostic; see [docs/LLM.md](docs/LLM.md) |
+| Job queue + data | **Postgres-only** (no Redis) |
 | Read connectors | Thin adapters behind shared cache/staleness core |
-| Database | PostgreSQL + pgvector (recommended — see §4) |
-| Slack ingress | Events API + HTTP webhook (recommended — see §1) |
-| Tracing | LangFuse self-hosted or LangSmith (recommended — see §7) |
+| Database | PostgreSQL + pgvector |
+| Retrieval | **C+** — BM25 + graph + pgvector on prose only (see §4) |
+| GitHub code | Issues/PRs/docs first; **PR `#pieuvre-enrichment` comments** via scan agent |
+| Task confirmation | **Plain text** in thread (not Block Kit buttons) |
+| Slack ingress | Events API + HTTP webhook |
+| Tracing | **Postgres traces first**; LangFuse optional later |
+| Credentials | **Profile indirection** — see [docs/CREDENTIALS.md](docs/CREDENTIALS.md) |
+| Notion | **Per-project DB + field_map + drift hybrid C** — see [docs/NOTION.md](docs/NOTION.md) |
+| Task confirmation auth | **Config per project** — `task_confirmation.allowed_roles` |
+| Admin operations | **Global** `PIEUVRE_ADMIN_SLACK_IDS` in env only |
+| Implementation | **7 phases** — see [docs/PHASES.md](docs/PHASES.md) |
 
 ---
 
@@ -100,11 +109,15 @@ Legend: ✅ Decided · 🔶 Recommended default · ❓ Needs spike
 
 **Recommended V0 store:** PostgreSQL + pgvector
 
+**Embeddings (decided):** Cloud API — provider/model via env config; vectors stored in pgvector. Local models deferred unless privacy requires.
+
 | Option | Fit for Pieuvre V0 |
 |---|---|
 | **PostgreSQL + pgvector** ✅ | Single DB for resources, graph edges, embeddings, traces — simplest self-hosted ops |
+| **Cloud embedding API** ✅ | `text-embedding-3-small` or equivalent; ~$1/mo at small-team scale |
 | Pinecone / Qdrant | Adds another service; consider only if vector scale exceeds ~1M chunks |
 | Redis Stack | Fast but in-memory cost; poor fit for durable audit trail co-location |
+| Local embed model on VPS | Deferred — use if data must not leave host |
 
 **Spike needed ❓**
 
