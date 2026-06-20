@@ -176,191 +176,27 @@ graph TB
 
 ---
 
-## Design decisions
+## Design & implementation reference
 
-### 1. Own DB as operational source of truth
+Design rationale lives in topic docs — **one source per concern** to avoid drift. Seam-level decisions are captured as ADRs.
 
-Slack, GitHub, and Notion remain decoupled from each other. Pieuvre syncs them into its own database:
-
-- Normalized resource records with freshness metadata.
-- Source IDs stored alongside knowledge for exact citation backlinks.
-- Per-project skeletons and cross-project link edges.
-- Derived artifacts (embeddings, summaries, snippets) as dependent cache layers.
-- Audit traces and cached prompt configuration.
-
-External systems are never queried on every user message when a fresh cached copy exists.
-
-### 2. Read adapters + MCP write path (bridge pattern)
-
-**Read path:** thin adapters per source implementing:
-
-```typescript
-// Canonical seam contract: docs/PHASES.md "Seam contracts"
-interface ReadAdapter {
-  sourceType: SourceType;
-  getMetadata(id: string): Promise<ResourceMetadata>;
-  getCanonicalContent(id: string): Promise<string>;
-  normalize(id: string, raw?: unknown): Promise<NormalizedExtract>;
-}
-```
-
-**Write path:** mutations go through **literal MCP servers** (starting with Notion). The agent calls MCP tools; it never hits Notion/Slack/GitHub write APIs directly. Read adapters stay in-process for latency.
-
-This keeps connector code small, testable, and swappable.
-
-### 3. Shared freshness and invalidation framework
-
-One staleness engine for all connectors. Adapters only supply metadata and canonical content.
-
-**Decision order:**
-
-1. **Fresh** → serve cached result.
-2. **Stale + validator** (`updated_at`, ETag, revision token) → lightweight revalidation.
-3. **Stale, no validator** → fetch canonical content, compare hash.
-4. **Changed** → discard cached artifact + derived index entries, re-search, re-index.
-5. **Deleted / inaccessible** → mark unavailable, remove from active results.
-
-**Canonical hash rules:** normalize whitespace, sort unordered collections, exclude transport/ephemeral fields, preserve semantic content.
-
-**Ongoing sync:** event-driven invalidation for day-to-day freshness; admin-only full rescan when a deep rebuild is needed.
-
-### 4. Knowledge graph: project skeleton + cross-links
-
-- Base unit: **per-project skeleton** (tasks, code refs, docs, Slack threads).
-- **Cross-project links** added only when retrieval or classification finds evidence — not a monolithic global graph on day one.
-- Efficient, auditable, and scales as projects multiply.
-
-### 5. Prompt configuration in GitHub
-
-Project and channel instructions live as **versioned files** in the Pieuvre repo (or a dedicated config repo). Pieuvre:
-
-1. Reads files via GitHub API.
-2. Caches parsed config in its DB.
-3. Invalidates cache on file change (same staleness framework).
-
-A shared core prompt is layered with per-project and per-channel instructions. Non-technical editing via Notion UI is deferred.
-
-### 6. Escalation and ownership
-
-Competent-person routing uses **both**:
-
-- Manual mapping (project/topic → person) in config.
-- Inferred ownership from GitHub (`CODEOWNERS`, issue assignees) and Notion page properties.
-
-Escalation is **private DM first** to the competent person, always linking back to the original Slack thread. **In-thread:** Pieuvre also tells the user who it forwarded to (name/handle + role if known).
-
-### Failure handling (placeholder flow)
-
-After posting “Looking this up…”:
-
-| Outcome | Slack behavior |
+| Topic | Authoritative doc |
 |---|---|
-| **Success** | `chat.update` → final answer + citations |
-| **Error** (LLM timeout, crash) | `chat.update` → brief error + *“Try again or rephrase.”* |
-| **Second error** (same thread, within 15 min) | Forward to owner + in-thread names who was forwarded to |
-| **Escalation** (no source, low confidence) | DM owner + in-thread names who was forwarded to |
+| Postgres-only (data + queue + pgvector + traces) | [ADR-0001](docs/adr/0001-postgres-only.md) |
+| Read adapters in-process + MCP writes (bridge pattern) | [ADR-0002](docs/adr/0002-read-adapters-mcp-writes.md) |
+| Universal `resource_id` + shared staleness engine (decision order, hash rules) | [ADR-0003](docs/adr/0003-resource-id-staleness-engine.md) · [RESEARCH.md §5](RESEARCH.md) |
+| Knowledge graph: project skeleton + cross-links | [PHASES.md §2](docs/PHASES.md) |
+| Prompt config in GitHub + cache invalidation | [RESEARCH.md §8](RESEARCH.md) |
+| Escalation, ownership, failure/placeholder flow | [RESEARCH.md §1, §11](RESEARCH.md) |
+| Confidence model (V0 → later) | [DECISIONS.md P17](docs/DECISIONS.md) |
+| Credentials, profiles, admin ops | [CREDENTIALS.md](docs/CREDENTIALS.md) |
+| Notion canonical model + `field_map` + drift | [NOTION.md](docs/NOTION.md) |
+| LLM reasoning tiers | [LLM.md](docs/LLM.md) |
+| Retention windows | [RETENTION.md](docs/RETENTION.md) |
 
-Never leave placeholder text hanging. Log full detail in trace only (not user-facing stack traces).
+**Confirmed V0 stack:** TypeScript/Node · self-hosted Docker · PostgreSQL-only (data + Postgres queue + pgvector + traces, no Redis) · in-process read adapters · literal MCP for Notion writes · provider-agnostic LLM tiers · plain-text task confirmation. Full table + rationale: [DECISIONS.md "Stack"](docs/DECISIONS.md).
 
-### 7. Confidence model (V0 → later)
-
-- **V0:** prompt-driven agent outputs answer + confidence rationale; reply directly when confident.
-- **Later:** hard-coded early returns calibrated from trace analysis (open coding → axial coding on recorded runs).
-
-### 8. Projects, credentials, and Notion
-
-- Each **project** has independent Slack channels, GitHub repos, and Notion database — linked via CrossLinks, not shared globals.
-- **Credential profiles** (`slack_main`, `github_org`, `notion_ws_main`) — project YAML references profiles; secrets in env only. [CREDENTIALS.md](docs/CREDENTIALS.md)
-- **Notion A+:** canonical task model + per-project `field_map` + hybrid drift recovery (thread prompt → admin DM). [NOTION.md](docs/NOTION.md)
-- **MCP** hosts Notion write tokens; Pieuvre read adapters use the same integration token from env.
-
----
-
-## V0 stack (confirmed)
-
-| Concern | Choice | Rationale |
-|---|---|---|
-| **Language** | TypeScript / Node.js | Slack + MCP SDK fit; one runtime for adapters, agent, and MCP client. |
-| **Write actions** | Literal MCP tools | Isolated, auditable Notion mutations via MCP servers. |
-| **LLM** | Reasoning tiers via config | Provider-agnostic; tier per step. See [LLM.md](docs/LLM.md). |
-| **Deployment** | Self-hosted Docker | Full data control; docker-compose on VPS/homelab. |
-| **Database** | PostgreSQL only | Data, job queue, pgvector, traces — no Redis in V0. |
-| **Retrieval** | C+ phased | BM25 + graph (Phase 2); pgvector on prose only — not full repo embed. |
-| **GitHub code context** | PR enrichment comments | Scan agent (Cursor/Claude Code) posts `#pieuvre-enrichment`; Pieuvre ingests. |
-| **Task confirmation** | Plain text in thread | Thread FSM; agent interprets yes/no — buttons deferred. |
-| **Slack ingress** | Events API + HTTP webhook | Push-based; reverse proxy terminates TLS. |
-| **Tracing** | Postgres traces (Phase 0–6) | LangFuse optional post Phase 6. |
-| **Credentials** | Profile indirection + `.env` V0 | Projects ref profiles; MCP holds Notion write token. See [CREDENTIALS.md](docs/CREDENTIALS.md). |
-| **Notion tasks** | Per-project DB + canonical `field_map` | Schema drift: hybrid Slack prompt. See [NOTION.md](docs/NOTION.md). |
-| **Embeddings** | Cloud API (Phase 2) | Provider via config; vectors in pgvector. |
-| **Admin ops** | Global env list | `PIEUVRE_ADMIN_SLACK_IDS` for rescan / admin CLI. |
-| **Retention** | Traces 90d; resources until deleted | See [RETENTION.md](docs/RETENTION.md). |
-
----
-
-## Data model (high level)
-
-```
-Project
-  ├── id, name, prompt_config_ref
-  ├── channel_hints[]          # default project context
-  └── skeleton
-        ├── tasks[]            # Notion task refs + normalized fields
-        ├── code_refs[]        # GitHub file/issue/PR refs
-        ├── docs[]             # Notion page refs
-        └── slack_threads[]    # thread refs + normalized extracts
-
-CrossLink
-  ├── source_resource_id
-  ├── target_resource_id
-  ├── link_type               # duplicate_of, related_to, parent_of, blocks
-  └── evidence                # retrieval score, agent rationale, trace ref
-
-Resource (unified cache record)
-  ├── resource_id, source_type
-  ├── updated_at, version_marker, content_hash
-  ├── fetched_at, stale_after, status
-  └── normalized_extract      # not raw payload unless required
-
-Trace
-  ├── thread_id, steps[]
-  ├── confidence, sources_used[]
-  └── actions_taken[]
-```
-
----
-
-## What is explicitly deferred
-
-| Item | Notes |
-|---|---|
-| Task template (Notion DB layout) | Canonical fields defined; copy template per project when onboarding. |
-| Task confirmation auth *(values only)* | Mechanism **designed** (`task_confirmation.allowed_roles`, default `requester_or_owners`); only per-project role values pending onboarding — see [NOTION.md](docs/NOTION.md). |
-| "Too complex" operation threshold | Derive from trace analysis (open → axial coding). |
-| Non-technical prompt editing | Notion UI for instructions — later. |
-| Prioritization | Weekly polls, cost/priority scoring — later. |
-| GitHub writes | Issue/PR creation — post-V0. |
-| GitHub MCP server | Read-only in V0; write MCP deferred. |
-
----
-
-## Project structure (planned)
-
-```
-pieuvre/
-├── connectors/              # Read adapters: slack, github, notion
-│   └── _adapter.ts          # Shared adapter interface
-├── core/
-│   ├── cache/               # Staleness engine + invalidation
-│   ├── graph/               # Project skeletons + cross-links
-│   ├── retrieval/           # Hybrid search + citation assembly
-│   ├── agent/               # Orchestrator, classifier, confidence
-│   └── traces/              # Audit trail recorder
-├── mcp/                     # MCP client + server configs (Notion MCP, future)
-├── db/                      # Schema, migrations
-├── prompts/                 # Core + per-project/channel config (also in GitHub)
-└── config/                  # credential-profiles.yaml, examples
-```
+**Data model & schema:** [PHASES.md "Postgres schema"](docs/PHASES.md) (tables + `resource_id` scheme + planned module layout via seam contracts). **Deferred items:** [DECISIONS.md "Explicitly deferred"](docs/DECISIONS.md).
 
 ---
 
