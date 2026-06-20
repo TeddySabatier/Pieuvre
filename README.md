@@ -82,8 +82,8 @@ sequenceDiagram
 | Area | V0 behaviour |
 |---|---|
 | **Users** | Internal team (you + workmates) |
-| **Slack** | Continuous monitoring + explicit mention. Short list of channels. Clarify in-thread. **Hybrid C** thread filter. **Placeholder:** “Looking this up…” → edit with final reply. |
-| **GitHub** | Read-only (status, issues, PRs, code context). No issue creation in V0. |
+| **Slack** | **Single workspace** V0. Continuous monitoring + explicit mention. Short list of channels. Hybrid C thread filter. Placeholder → edit reply. |
+| **GitHub** | **Single org** V0. Read-only. Issues/PRs/docs + PR enrichments; no full code embed. |
 | **Notion** | Create and update tasks after confirmation. Complex structural ops delegated to humans. |
 | **Classification** | Flexible inference; no fixed subtype taxonomy. |
 | **Multi-project** | Yes — per-project skeletons + explicit cross-project links from day one. |
@@ -252,7 +252,8 @@ After posting “Looking this up…”:
 |---|---|
 | **Success** | `chat.update` → final answer + citations |
 | **Error** (LLM timeout, crash) | `chat.update` → brief error + *“Try again or rephrase.”* |
-| **Escalation** (no source, low confidence, or stuck) | DM owner + `chat.update` → *“Forwarded to @alice (backend owner) — they’ll follow up.”* |
+| **Second error** (same thread, within 15 min) | Forward to owner + in-thread names who was forwarded to |
+| **Escalation** (no source, low confidence) | DM owner + in-thread names who was forwarded to |
 
 Never leave placeholder text hanging. Log full detail in trace only (not user-facing stack traces).
 

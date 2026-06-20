@@ -391,7 +391,9 @@ sequenceDiagram
     CR->>TR: finishRun
 ```
 
-**Failure:** never leave “Looking this up…” — always `chat.update` with error + *Try again or rephrase.*
+**Failure:** never leave “Looking this up…” — `chat.update` with error + *Try again or rephrase.*
+
+**Second failure** in same thread within 15 min → auto-escalate (DM + in-thread forward message).
 
 **Escalation:** DM owner privately **and** tell user in-thread who it was forwarded to.
 
@@ -410,7 +412,7 @@ sequenceDiagram
 
 ### Ownership routing
 
-Priority: manual `owners` in project YAML → GitHub CODEOWNERS → Notion assignee → project default.
+Priority: manual `owners` in project YAML → GitHub CODEOWNERS → Notion assignee → project default → **`PIEUVRE_ADMIN_SLACK_IDS`** (global admin fallback).
 
 ### Deliverables
 

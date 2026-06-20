@@ -41,8 +41,10 @@ task_confirmation:
   allowed_roles:
     - requester
     - project_owners
-  # Alternatives: requester_only | project_owners_only | thread_participants
-  # Default if omitted: [requester, project_owners]
+
+escalation:
+  retry_window_minutes: 15
+  auto_forward_on_second_error: true
 
 instructions: |
   Project-specific agent instructions (layered on prompts/core.yaml).

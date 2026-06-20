@@ -82,7 +82,7 @@ profiles:
 
 | Profile kind | Used by | Secret location |
 |---|---|---|
-| `slack` | Slack read adapter + replies | Pieuvre worker env |
+| `slack` | Slack read adapter + replies | Pieuvre worker env — **one workspace in V0** |
 | `github` | GitHub read adapter + webhooks | Pieuvre worker env |
 | `notion` | Notion read adapter | Pieuvre worker env (`read_env`) |
 | `notion` write | Notion MCP tools | MCP server env (`write_env`) |

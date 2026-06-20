@@ -32,6 +32,10 @@ Legend: ✅ Decided · 🔶 Recommended default · ❓ Needs spike
 | Notion drift timeout | **30 minutes** before admin DM (project override optional) |
 | Thread monitoring | **Hybrid C** — see RESEARCH §1 |
 | Slack processing UX | **Placeholder** → edit; errors + escalation name owner in-thread |
+| Error escalation | **Second failure in 15 min** → auto-forward (Option C) |
+| Owner fallback | **Global admin** if owner unknown |
+| Slack scope | **Single workspace** V0 |
+| GitHub scope | **Single org** V0 — one token, repos in project YAML |
 | Implementation | **7 phases** — see [docs/PHASES.md](docs/PHASES.md) |
 
 ---
@@ -54,7 +58,8 @@ Legend: ✅ Decided · 🔶 Recommended default · ❓ Needs spike
 - **Processing UX (Option B):** Post in-thread placeholder (`Looking this up…`) → **`chat.update`** same message with final answer + citations. Store `placeholder_ts` on ConversationRun trace.
 - **Failure / escalation UX:**
   - **Error:** Update placeholder with what happened + *“Try again or rephrase.”* (no silent failure).
-  - **Forward to competent person:** Private DM to owner **and** update placeholder (or final message) in-thread: *“Forwarded to @alice (backend owner) — they’ll follow up.”* User always sees who received it.
+  - **Second error** in same thread within **15 minutes** → auto-forward to competent owner + in-thread: *“Forwarded to @alice…”*
+  - **Forward (no-source / low-confidence):** Private DM to owner **and** in-thread names who received it.
 
 **Scopes to confirm during Slack app registration:**
 
@@ -310,6 +315,8 @@ Tune threshold from traces in Phase 6.
 
 **In-thread copy (error):** *“Something went wrong: {brief reason}. Try again or rephrase.”*
 
+**Owner resolution fallback (Option C):** If no owner inferred from YAML / CODEOWNERS / Notion → forward to first **`PIEUVRE_ADMIN_SLACK_IDS`** entry; in-thread: *“Forwarded to @admin — they’ll follow up.”*
+
 **Recommended ownership sources (priority order):**
 
 1. Manual override in `prompts/projects/*.yaml` (`owners:` map).
@@ -320,7 +327,8 @@ Tune threshold from traces in Phase 6.
 **Spike needed ❓**
 
 - [ ] Slack DM format with deep link back to thread (`slack://channel?team=...&id=...`).
-- [ ] Handle owner not in Slack workspace (fallback to public @mention in thread).
+- [ ] Handle owner not in Slack workspace (fallback to public @mention in thread)
+- [ ] If no owner resolved → forward to global admin (`PIEUVRE_ADMIN_SLACK_IDS`).
 
 ---
 
