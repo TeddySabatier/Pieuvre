@@ -2,7 +2,7 @@
 
 Consolidated record of all planning Q&A decisions. For implementation detail, follow links to topic docs.
 
-**Status:** Locked for V0 design · **Last updated:** planning session through Q24
+**Status:** Locked for V0 design · **Last updated:** planning session through Q37
 
 Related: [PHASES.md](PHASES.md) · [CREDENTIALS.md](CREDENTIALS.md) · [NOTION.md](NOTION.md) · [LLM.md](LLM.md) · [RETENTION.md](RETENTION.md) · [RESEARCH.md](../RESEARCH.md) · [adr/](adr/)
 
@@ -86,6 +86,19 @@ Related: [PHASES.md](PHASES.md) · [CREDENTIALS.md](CREDENTIALS.md) · [NOTION.m
 | **22** | Owner unknown? | Fallback to **global admin** | [RESEARCH.md §11](../RESEARCH.md) |
 | **23** | Slack scope V0? | **Single workspace** | [CREDENTIALS.md](CREDENTIALS.md) |
 | **24** | GitHub scope V0? | **Single org** — one token, repos in YAML | [CREDENTIALS.md](CREDENTIALS.md) |
+| **25** | Citation freshness policy? | Revalidate sources selected for final citations before reply; fallback to `last_verified_at` note on timeout | [PHASES.md](PHASES.md) |
+| **26** | Cross-project retrieval visibility? | Allow cross-project graph expansion and citation in V0 (shared trust boundary assumption) | [PHASES.md](PHASES.md) |
+| **27** | Owner identity resolution (V0)? | Slack IDs only; defer CODEOWNERS and Notion-assignee inference | [PHASES.md](PHASES.md) |
+| **28** | Agent schema shape? | Use both `response_mode` and `work_category` fields in structured output | [PHASES.md](PHASES.md) |
+| **29** | Enrichment trust source? | Accept valid enrichment blocks from any repo commenter in V0 | [PHASES.md](PHASES.md) |
+| **30** | Prompt-injection defense? | Prompt contract only in V0 (sources are data, not instructions) | [PHASES.md](PHASES.md) |
+| **31** | Same-thread concurrency policy? | Cancel in-flight run when a newer message arrives in the same thread | [PHASES.md](PHASES.md) |
+| **32** | Placeholder orphan policy? | On cancel: mark superseded; plus background reaper for crashes/timeouts | [PHASES.md](PHASES.md) |
+| **33** | Hybrid C reply gating? | Process replies only in active states; `@Pieuvre` reopens from `done` | [PHASES.md](PHASES.md) |
+| **34** | Staleness typing seam? | Separate `ResourceStatus` (stored) from `StalenessDecision` (evaluate output) | [PHASES.md](PHASES.md) |
+| **35** | Confidence representation? | Numeric `confidence_score` (0..1) with optional label for logs/UI | [PHASES.md](PHASES.md) |
+| **36** | Enrichment rollout guardrail? | Use enrichment for ranking/context, but do not cite it publicly until hardening | [PHASES.md](PHASES.md) |
+| **37** | Documentation deliverable? | Apply these decisions directly into repository docs now | [PHASES.md](PHASES.md) |
 
 ---
 
@@ -108,10 +121,8 @@ This log records **what** was decided (tables above). The **how** lives in topic
 ## Owner resolution order
 
 1. Manual `owners` in project YAML  
-2. GitHub `CODEOWNERS`  
-3. Notion assignee / creator  
-4. `owners.default`  
-5. **`PIEUVRE_ADMIN_SLACK_IDS`** (global admin)
+2. `owners.default`  
+3. **`PIEUVRE_ADMIN_SLACK_IDS`** (global admin)
 
 ---
 

@@ -61,8 +61,14 @@ interface ResourceStore {
 }
 
 // core/cache/staleness.ts — Phase 1: TTL + updated_at; Phase 6: full hash
+type ResourceStatus = 'fresh' | 'stale' | 'revalidated' | 'invalidated' | 'missing';
+type StalenessDecision =
+  | { action: 'use_cache' }
+  | { action: 'revalidate'; reason: 'ttl' | 'pre_cite' | 'manual' }
+  | { action: 'invalidate'; reason: 'deleted' | 'hash_mismatch' };
+
 interface StalenessEngine {
-  evaluate(id: string): Promise<'fresh' | 'revalidate' | 'invalidate'>;
+  evaluate(id: string): Promise<StalenessDecision>;
   revalidate(adapter: ReadAdapter, id: string): Promise<void>;
 }
 
@@ -246,7 +252,7 @@ sequenceDiagram
 ### Thread FSM (introduced here)
 
 ```
-idle | clarifying | retrieving | answering | proposing | awaiting_confirmation | executing | done
+idle | clarifying | retrieving | answering | escalating | proposing | awaiting_confirmation | executing | done
 ```
 
 Phase 1 only uses: `idle` → (message received, job enqueued).
@@ -254,7 +260,7 @@ Phase 1 only uses: `idle` → (message received, job enqueued).
 ### Deliverables
 
 - [ ] Slack Events API + signing secret + channel allowlist
-- [ ] **Hybrid C message filter:** root messages + `@Pieuvre` + thread replies when `conversation_state ≠ idle`
+- [ ] **Hybrid C message filter:** root messages + `@Pieuvre` + thread replies only in active states (`clarifying`, `retrieving`, `answering`, `escalating`, `proposing`, `awaiting_confirmation`, `executing`)
 - [ ] `slack_events_seen` idempotency
 - [ ] GitHub webhook: issues, PRs, push on docs paths
 - [ ] Notion adapter: read pages by database ID (config placeholder OK)
@@ -280,7 +286,7 @@ Phase 1 only uses: `idle` → (message received, job enqueued).
    - `slack`, `notion`, `github_issue`, `github_pr`, `github_enrichment` (Phase 4)
    - **Exclude** raw code files
 3. **RRF merge** — combine BM25 + vector ranks
-4. **Graph expand** — one hop on `cross_links` from top hits
+4. **Graph expand** — one hop on `cross_links` from top hits, including cross-project links (V0 assumes shared trust boundary)
 5. **Retrieval budget** — default: 10 sources, 8k tokens context, 1 re-retrieve max
 
 ### Flow: index Resource
@@ -372,13 +378,14 @@ sequenceDiagram
 
     U->>S: question in thread
     S->>CR: ThreadContext
+    CR->>CR: cancel previous in-flight run for thread (if any)
     CR->>TR: startRun
     CR->>S: post "Looking this up…" (placeholder_ts)
     CR->>RET: search(query, project)
     RET-->>CR: RankedSource[] + CrossLinks
     CR->>LLM: structured prompt + numbered sources
-    LLM-->>CR: answer, confidence, cited_ids
-    alt confidence >= threshold AND cited_ids non-empty
+    LLM-->>CR: answer, confidence_score, cited_ids
+    alt confidence_score >= threshold AND cited_ids non-empty
         CR->>S: chat.update placeholder → answer + backlinks
     else no sources
         CR->>S: chat.update → no source + ask clarify
@@ -401,9 +408,11 @@ sequenceDiagram
 
 ```typescript
 {
-  intent: 'question' | 'task' | 'noise' | 'info';
+  response_mode: 'question' | 'task' | 'noise' | 'info';
+  work_category?: 'feature' | 'bug' | 'support';
   answer?: string;
-  confidence: 'high' | 'medium' | 'low';
+  confidence_score: number; // 0..1
+  confidence_label?: 'low' | 'medium' | 'high';
   cited_resource_ids: string[];
   clarification_needed?: string;
   escalation?: { owner_slack_id: string; owner_display: string; reason: string };
@@ -412,7 +421,7 @@ sequenceDiagram
 
 ### Ownership routing
 
-Priority: manual `owners` in project YAML → GitHub CODEOWNERS → Notion assignee → project default → **`PIEUVRE_ADMIN_SLACK_IDS`** (global admin fallback).
+Priority (V0): manual Slack IDs in `owners` → `owners.default` → **`PIEUVRE_ADMIN_SLACK_IDS`** (global admin fallback). CODEOWNERS and Notion assignee inference are deferred.
 
 ### Deliverables
 
@@ -422,8 +431,11 @@ Priority: manual `owners` in project YAML → GitHub CODEOWNERS → Notion assig
 - [ ] Noise filter (ignore announcements, casual chat)
 - [ ] Project routing: content primary; **ask in thread** if top two candidates tie (threshold tunable)
 - [ ] Citation formatter: compact Slack links from `resource_id`
+- [ ] Revalidate final cited sources before posting answer; on timeout, include `last_verified_at` freshness note
 - [ ] **Placeholder UX:** post “Looking this up…” → `chat.update` with final text (same `ts`)
+- [ ] **Cancel-on-new-message UX:** if a newer thread message arrives, cancel in-flight run, mark old placeholder as superseded, start fresh run
 - [ ] **Failure UX:** update placeholder on error (try again) or escalation (name forwarded owner)
+- [ ] Placeholder reaper job: update orphan placeholders on crash/timeout
 - [ ] Private DM escalation with thread deep link
 - [ ] Traces in Postgres (`traces`, `trace_steps`)
 - [ ] Freshness hint in reply only when confidence low or user asks
@@ -482,13 +494,14 @@ sequenceDiagram
 - [ ] GitHub adapter: detect + parse `pieuvre-enrichment v1`
 - [ ] Link enrichment Resource to PR Resource (`related_to`)
 - [ ] Apply explicit `links[]` from YAML as CrossLinks
+- [ ] Enrichment is usable for retrieval/ranking context, but is not citable in public answers until hardening
 - [ ] Doc: scan agent prompt template for teammates
 - [ ] Optional: Cursor rule / Claude Code skill to generate block
 
 ### Exit criteria
 
 - Post enrichment comment on PR → searchable via `pieuvre search`
-- Answer flow cites enrichment when answering "what changed in PR 99?"
+- Answer flow may use enrichment for ranking/context, but public citations stay on verified non-enrichment sources in V0
 
 ---
 

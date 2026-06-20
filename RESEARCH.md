@@ -30,10 +30,16 @@ Legend: ✅ Decided · 🔶 Recommended default · ❓ Needs spike
 | Slack backfill | **30 days** default on `pieuvre scan` (per-project override optional) |
 | Project routing | **Ask in thread** when top two project candidates tie |
 | Notion drift timeout | **30 minutes** before admin DM (project override optional) |
-| Thread monitoring | **Hybrid C** — see RESEARCH §1 |
+| Thread monitoring | **Hybrid C active states** + `@Pieuvre` reopen from `done` — see RESEARCH §1 |
 | Slack processing UX | **Placeholder** → edit; errors + escalation name owner in-thread |
 | Error escalation | **Second failure in 15 min** → auto-forward (Option C) |
 | Owner fallback | **Global admin** if owner unknown |
+| Same-thread concurrency | **Cancel in-flight run** on newer thread message |
+| Placeholder cleanup | Cancel marks superseded + background reaper for crash/timeouts |
+| Confidence format | Numeric `confidence_score` (0..1), optional label |
+| Agent schema | Structured output includes both `response_mode` and `work_category` |
+| Citation freshness | Revalidate only final cited sources before reply |
+| Enrichment citations | Use for retrieval/ranking first; defer public citation until hardening |
 | Slack scope | **Single workspace** V0 |
 | GitHub scope | **Single org** V0 — one token, repos in project YAML |
 | Implementation | **7 phases** — see [docs/PHASES.md](docs/PHASES.md) |
@@ -54,9 +60,12 @@ Legend: ✅ Decided · 🔶 Recommended default · ❓ Needs spike
 - **Message processing (Hybrid C):**
   - **Always evaluate** new root-level messages in monitored channels.
   - **Always evaluate** `@Pieuvre` anywhere (including threads).
-  - **Evaluate thread replies** only when `conversation_states.status ≠ idle` for that thread (clarifying, awaiting_confirmation, etc.).
+  - **Evaluate thread replies** only when `conversation_states.status` is active: `clarifying`, `retrieving`, `answering`, `escalating`, `proposing`, `awaiting_confirmation`, `executing`.
+  - If state is `done`, only `@Pieuvre` or a new actionable root message reopens processing.
   - Ignore other thread replies (no classify/LLM call).
 - **Processing UX (Option B):** Post in-thread placeholder (`Looking this up…`) → **`chat.update`** same message with final answer + citations. Store `placeholder_ts` on ConversationRun trace.
+- **Concurrency UX (latest-message wins):** if a newer message arrives in the same thread, cancel the in-flight run and start a fresh run.
+- **Placeholder reliability:** on cancel, mark prior placeholder superseded; a background reaper updates orphan placeholders if a worker crashes.
 - **Failure / escalation UX:**
   - **Error:** Update placeholder with what happened + *“Try again or rephrase.”* (no silent failure).
   - **Second error** in same thread within **15 minutes** → auto-forward to competent owner + in-thread: *“Forwarded to @alice…”*
@@ -195,8 +204,8 @@ interface ReadAdapter {
 **Decided:**
 
 - Single orchestrator agent in V0 (not multi-agent swarm).
-- Prompt-driven confidence first; hard-coded guards added later from trace analysis.
-- Structured output: `{ answer, confidence, sources[], proposed_actions[], clarification_needed }`.
+- Prompt-driven confidence with numeric output (`confidence_score` in `0..1`), hard-coded guards added later from trace analysis.
+- Structured output includes `response_mode` (question/task/noise/info) and `work_category` (feature/bug/support when relevant).
 
 **Recommended V0 pattern:**
 
@@ -206,7 +215,7 @@ interface ReadAdapter {
 
 **Spike needed ❓**
 
-- [ ] Calibrate confidence rubric in prompt (what counts as "confident enough to reply publicly").
+- [ ] Calibrate numeric confidence rubric in prompt (what counts as "confident enough to reply publicly").
 - [ ] Test classification accuracy on 20–30 real Slack messages from your channels.
 - [ ] Define JSON schema for structured agent output (Zod validation).
 
@@ -315,26 +324,25 @@ Tune threshold from traces in Phase 6.
 
 ## 11. Escalation and ownership mapping ✅ 🔶
 
-**Status:** Decided — manual + inferred; private DM to owner; **user told in-thread who was forwarded to**.
+**Status:** Decided — Slack-ID-first mapping in V0; private DM to owner; **user told in-thread who was forwarded to**.
 
 **In-thread copy (escalation):** *“Forwarded to @alice (backend owner) — they’ll follow up.”*
 
 **In-thread copy (error):** *“Something went wrong: {brief reason}. Try again or rephrase.”*
 
-**Owner resolution fallback (Option C):** If no owner inferred from YAML / CODEOWNERS / Notion → forward to first **`PIEUVRE_ADMIN_SLACK_IDS`** entry; in-thread: *“Forwarded to @admin — they’ll follow up.”*
+**Owner resolution fallback (Option C):** If no owner found in project YAML Slack IDs/default owner → forward to first **`PIEUVRE_ADMIN_SLACK_IDS`** entry; in-thread: *“Forwarded to @admin — they’ll follow up.”*
 
-**Recommended ownership sources (priority order):**
+**Recommended ownership sources (priority order, V0):**
 
 1. Manual override in `prompts/projects/*.yaml` (`owners:` map).
-2. GitHub `CODEOWNERS` for code-related questions.
-3. Notion task assignee / creator for task-status questions.
-4. Fallback: project default owner from config.
+2. Project default owner from config.
+3. Fallback: global admin (`PIEUVRE_ADMIN_SLACK_IDS`).
 
 **Spike needed ❓**
 
 - [ ] Slack DM format with deep link back to thread (`slack://channel?team=...&id=...`).
-- [ ] Handle owner not in Slack workspace (fallback to public @mention in thread)
-- [ ] If no owner resolved → forward to global admin (`PIEUVRE_ADMIN_SLACK_IDS`).
+- [ ] Handle owner not in Slack workspace (fallback to global admin mention in thread)
+- [ ] Re-introduce CODEOWNERS / Notion-assignee inference only after identity mapping is added.
 
 ---
 
