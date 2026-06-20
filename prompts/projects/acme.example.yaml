@@ -10,11 +10,15 @@ credential_profile:
 slack_channels:
   - "#acme-dev"
 
+# Slack history backfill on pieuvre scan (days). Default: 30
+slack_backfill_days: 30
+
 github_repos:
   - "acme/backend"
 
 notion:
   task_database_id: "00000000-0000-0000-0000-000000000000"
+  drift_prompt_timeout_minutes: 30
   field_map:
     title: Title
     status: Status

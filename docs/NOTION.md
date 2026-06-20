@@ -90,7 +90,9 @@ sequenceDiagram
 |---|---|
 | Write blocked (task confirmation flow) | **Same Slack thread** first |
 | Background sync detects drift | **DM `owners.notion_admin`** (fallback: `owners.default`) |
-| No reply within timeout (configurable, default 30 min) | **DM project admin** |
+| No reply within timeout | **DM project admin** — default **30 minutes** (`notion.drift_prompt_timeout_minutes`) |
+
+**Decided (V0):** 30-minute in-thread wait before admin DM on write-blocked drift. Background sync drift still DMs admin immediately (no thread context).
 
 Every mapping change is logged in `trace_steps` with `{ field, old, new, changed_by }`.
 

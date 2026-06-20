@@ -8,7 +8,7 @@
 
 **Domain glossary:** [CONTEXT.md](CONTEXT.md)
 
-**Configuration:** [docs/CREDENTIALS.md](docs/CREDENTIALS.md) · [docs/NOTION.md](docs/NOTION.md) · [docs/LLM.md](docs/LLM.md)
+**Configuration:** [docs/CREDENTIALS.md](docs/CREDENTIALS.md) · [docs/NOTION.md](docs/NOTION.md) · [docs/LLM.md](docs/LLM.md) · [docs/RETENTION.md](docs/RETENTION.md)
 
 ---
 
@@ -82,12 +82,12 @@ sequenceDiagram
 | Area | V0 behaviour |
 |---|---|
 | **Users** | Internal team (you + workmates) |
-| **Slack** | Continuous monitoring + explicit mention. Short list of channels. Clarify in-thread. |
+| **Slack** | Continuous monitoring + explicit mention. Short list of channels. Clarify in-thread. **Hybrid C** thread filter. **Placeholder:** “Looking this up…” → edit with final reply. |
 | **GitHub** | Read-only (status, issues, PRs, code context). No issue creation in V0. |
 | **Notion** | Create and update tasks after confirmation. Complex structural ops delegated to humans. |
 | **Classification** | Flexible inference; no fixed subtype taxonomy. |
 | **Multi-project** | Yes — per-project skeletons + explicit cross-project links from day one. |
-| **Project routing** | Message content is primary; channel provides default hint; layered prompts help disambiguate. |
+| **Project routing** | Content primary; channel hint secondary. **Ask in thread** if top two projects tie — no silent guess. |
 | **Confidence** | Prompt-driven agent judgment first; hard-coded early returns added later from trace analysis. |
 | **Freshness exposure** | Only when confidence is low or the user asks — not on every reply. |
 | **Initial setup** | Manual trigger → broader scan of connected Slack, GitHub, and Notion to validate ingestion. |
@@ -242,7 +242,19 @@ Competent-person routing uses **both**:
 - Manual mapping (project/topic → person) in config.
 - Inferred ownership from GitHub (`CODEOWNERS`, issue assignees) and Notion page properties.
 
-Escalation is **private DM first**, always linking back to the original Slack thread.
+Escalation is **private DM first** to the competent person, always linking back to the original Slack thread. **In-thread:** Pieuvre also tells the user who it forwarded to (name/handle + role if known).
+
+### Failure handling (placeholder flow)
+
+After posting “Looking this up…”:
+
+| Outcome | Slack behavior |
+|---|---|
+| **Success** | `chat.update` → final answer + citations |
+| **Error** (LLM timeout, crash) | `chat.update` → brief error + *“Try again or rephrase.”* |
+| **Escalation** (no source, low confidence, or stuck) | DM owner + `chat.update` → *“Forwarded to @alice (backend owner) — they’ll follow up.”* |
+
+Never leave placeholder text hanging. Log full detail in trace only (not user-facing stack traces).
 
 ### 7. Confidence model (V0 → later)
 
@@ -276,6 +288,7 @@ Escalation is **private DM first**, always linking back to the original Slack th
 | **Notion tasks** | Per-project DB + canonical `field_map` | Schema drift: hybrid Slack prompt. See [NOTION.md](docs/NOTION.md). |
 | **Embeddings** | Cloud API (Phase 2) | Provider via config; vectors in pgvector. |
 | **Admin ops** | Global env list | `PIEUVRE_ADMIN_SLACK_IDS` for rescan / admin CLI. |
+| **Retention** | Traces 90d; resources until deleted | See [RETENTION.md](docs/RETENTION.md). |
 
 ---
 

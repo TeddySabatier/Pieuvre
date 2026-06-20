@@ -26,6 +26,12 @@ Legend: ✅ Decided · 🔶 Recommended default · ❓ Needs spike
 | Notion | **Per-project DB + field_map + drift hybrid C** — see [docs/NOTION.md](docs/NOTION.md) |
 | Task confirmation auth | **Config per project** — `task_confirmation.allowed_roles` |
 | Admin operations | **Global** `PIEUVRE_ADMIN_SLACK_IDS` in env only |
+| Retention | **Traces 90d**; resources until source deleted — [docs/RETENTION.md](docs/RETENTION.md) |
+| Slack backfill | **30 days** default on `pieuvre scan` (per-project override optional) |
+| Project routing | **Ask in thread** when top two project candidates tie |
+| Notion drift timeout | **30 minutes** before admin DM (project override optional) |
+| Thread monitoring | **Hybrid C** — see RESEARCH §1 |
+| Slack processing UX | **Placeholder** → edit; errors + escalation name owner in-thread |
 | Implementation | **7 phases** — see [docs/PHASES.md](docs/PHASES.md) |
 
 ---
@@ -40,6 +46,15 @@ Legend: ✅ Decided · 🔶 Recommended default · ❓ Needs spike
 - **Socket Mode** only if outbound HTTPS from the host is blocked — adds a persistent WebSocket worker.
 - Buffer incoming events in a lightweight queue (Redis or Postgres `job` table) to absorb bursts and respect rate limits.
 - Model a Slack **thread** (parent + replies) as one analysis unit; store `thread_ts` as the stable resource ID.
+- **Message processing (Hybrid C):**
+  - **Always evaluate** new root-level messages in monitored channels.
+  - **Always evaluate** `@Pieuvre` anywhere (including threads).
+  - **Evaluate thread replies** only when `conversation_states.status ≠ idle` for that thread (clarifying, awaiting_confirmation, etc.).
+  - Ignore other thread replies (no classify/LLM call).
+- **Processing UX (Option B):** Post in-thread placeholder (`Looking this up…`) → **`chat.update`** same message with final answer + citations. Store `placeholder_ts` on ConversationRun trace.
+- **Failure / escalation UX:**
+  - **Error:** Update placeholder with what happened + *“Try again or rephrase.”* (no silent failure).
+  - **Forward to competent person:** Private DM to owner **and** update placeholder (or final message) in-thread: *“Forwarded to @alice (backend owner) — they’ll follow up.”* User always sees who received it.
 
 **Scopes to confirm during Slack app registration:**
 
@@ -273,21 +288,27 @@ Agent orchestrator
 
 ## 10. Project identification and routing ✅
 
-**Status:** Decided — content primary, channel as hint, layered prompts.
+**Status:** Decided — content primary, channel as hint; **disambiguate in thread when ambiguous**.
 
 **Implementation notes:**
 
 - `prompts/projects/*.yaml` declares `channels[]` → default project hint.
-- Classifier outputs `project_candidates[]` with scores; single project if score gap > threshold, else ask in-thread.
-- Cross-project messages create `CrossLink` edges rather than forcing a single project assignment.
+- Classifier outputs `project_candidates[]` with scores.
+- **If score gap > threshold** → use top project silently.
+- **If top two within threshold** → ask in thread: “Is this about **Acme** or **Beta**?” before retrieve or task proposal (Option A).
+- Cross-project references in a resolved thread create `CrossLink` edges; task writes always target **one** project.
 
-No further research required before V0 — tune thresholds from traces.
+Tune threshold from traces in Phase 6.
 
 ---
 
 ## 11. Escalation and ownership mapping ✅ 🔶
 
-**Status:** Decided — manual + inferred, private DM first.
+**Status:** Decided — manual + inferred; private DM to owner; **user told in-thread who was forwarded to**.
+
+**In-thread copy (escalation):** *“Forwarded to @alice (backend owner) — they’ll follow up.”*
+
+**In-thread copy (error):** *“Something went wrong: {brief reason}. Try again or rephrase.”*
 
 **Recommended ownership sources (priority order):**
 
@@ -331,8 +352,8 @@ No further research required before V0 — tune thresholds from traces.
 | Normalized extracts | Yes | Until source deleted or manual purge |
 | Raw payload snapshots | Only if needed for latency/audit | Discard on confirmed staleness + change |
 | Embeddings | Yes | Cascade-delete with source resource |
-| Traces | Yes | 90 days default (configurable) |
-| Slack message text | Normalized extract only | Re-fetch from Slack API if stale |
+| Traces | Yes | **90 days** (configurable via `PIEUVRE_RETENTION_TRACES_DAYS`) |
+| Slack message text | Normalized extract only | Until source deleted; re-fetch if stale |
 
 **Spike needed ❓**
 
@@ -348,7 +369,9 @@ No further research required before V0 — tune thresholds from traces.
 **Recommended implementation:**
 
 - CLI command: `pieuvre scan --project acme --sources slack,github,notion`
-- Progress UI: structured logs + `scan_jobs` table (resumable checkpoints).
+- **Slack backfill:** last **30 days** per monitored channel (default); override `slack_backfill_days` in project YAML
+- GitHub: all open issues/PRs + docs paths (no full code embed)
+- Notion: all pages in configured task databases + linked docs
 - Rate-limit budget: sequential source scan, parallel within source up to API limit − 20% headroom.
 - Full rescan gate: admin runs `pieuvre rescan --dry-run` first → shows estimated API calls + duration → confirm.
 

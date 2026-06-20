@@ -254,11 +254,12 @@ Phase 1 only uses: `idle` → (message received, job enqueued).
 ### Deliverables
 
 - [ ] Slack Events API + signing secret + channel allowlist
+- [ ] **Hybrid C message filter:** root messages + `@Pieuvre` + thread replies when `conversation_state ≠ idle`
 - [ ] `slack_events_seen` idempotency
 - [ ] GitHub webhook: issues, PRs, push on docs paths
 - [ ] Notion adapter: read pages by database ID (config placeholder OK)
 - [ ] `conversation_states` updated on each thread event
-- [ ] CLI: `pieuvre scan --project X --sources slack,github,notion` (manual broad scan)
+- [ ] CLI: `pieuvre scan --project X --sources slack,github,notion` — Slack backfill **30 days** default (`slack_backfill_days` in project YAML)
 
 ### Exit criteria
 
@@ -372,20 +373,27 @@ sequenceDiagram
     U->>S: question in thread
     S->>CR: ThreadContext
     CR->>TR: startRun
+    CR->>S: post "Looking this up…" (placeholder_ts)
     CR->>RET: search(query, project)
     RET-->>CR: RankedSource[] + CrossLinks
     CR->>LLM: structured prompt + numbered sources
     LLM-->>CR: answer, confidence, cited_ids
     alt confidence >= threshold AND cited_ids non-empty
-        CR->>S: reply + compact backlinks
+        CR->>S: chat.update placeholder → answer + backlinks
     else no sources
-        CR->>S: no source + ask clarify
-    else low confidence
-        CR->>S: optional partial answer
-        CR->>S: DM owner with thread link
+        CR->>S: chat.update → no source + ask clarify
+    else low confidence or escalation
+        CR->>E: DM owner with thread link
+        CR->>S: chat.update → forwarded to @owner
+    else hard error
+        CR->>S: chat.update → error + try again
     end
     CR->>TR: finishRun
 ```
+
+**Failure:** never leave “Looking this up…” — always `chat.update` with error + *Try again or rephrase.*
+
+**Escalation:** DM owner privately **and** tell user in-thread who it was forwarded to.
 
 ### Agent output schema (Zod)
 
@@ -396,7 +404,7 @@ sequenceDiagram
   confidence: 'high' | 'medium' | 'low';
   cited_resource_ids: string[];
   clarification_needed?: string;
-  escalation?: { owner_slack_id: string; reason: string };
+  escalation?: { owner_slack_id: string; owner_display: string; reason: string };
 }
 ```
 
@@ -410,8 +418,10 @@ Priority: manual `owners` in project YAML → GitHub CODEOWNERS → Notion assig
 - [ ] `ModelRouter` + `config/llm-tiers.yaml` — tier per step ([LLM.md](LLM.md))
 - [ ] Provider adapters (Anthropic, OpenAI minimum)
 - [ ] Noise filter (ignore announcements, casual chat)
-- [ ] Project routing: content primary, channel hint secondary
+- [ ] Project routing: content primary; **ask in thread** if top two candidates tie (threshold tunable)
 - [ ] Citation formatter: compact Slack links from `resource_id`
+- [ ] **Placeholder UX:** post “Looking this up…” → `chat.update` with final text (same `ts`)
+- [ ] **Failure UX:** update placeholder on error (try again) or escalation (name forwarded owner)
 - [ ] Private DM escalation with thread deep link
 - [ ] Traces in Postgres (`traces`, `trace_steps`)
 - [ ] Freshness hint in reply only when confidence low or user asks
@@ -581,6 +591,7 @@ Upgrade StalenessEngine:
 - [ ] Admin-gated rescan
 - [ ] `.pieuvreignore` for GitHub doc paths
 - [ ] Runbook: backup Postgres, rotate tokens
+- [ ] Retention purge jobs — see [RETENTION.md](RETENTION.md)
 
 ### Exit criteria
 
