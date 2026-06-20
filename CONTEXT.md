@@ -11,7 +11,7 @@ Shared vocabulary for architecture, code, and docs. Use these terms consistently
 | **CrossLink** | An explicit edge between two Resources or tasks: `duplicate_of`, `related_to`, `parent_of`, `blocks`. Created by retrieval, agent reasoning, or human confirmation. |
 | **Conversation run** | One agent execution for a Slack thread turn: intent → retrieve → respond / propose / escalate. Logged as a Trace. Uses **reasoning tiers** per step ([LLM.md](docs/LLM.md)). |
 | **Reasoning tier** | `low` \| `medium` \| `high` \| `highest` — config maps each tier to `(provider, model)`. |
-| **Thread state** | Lifecycle of a Slack thread in Pieuvre: `idle` → `clarifying` → … → `done`. Hybrid monitoring: replies processed only when state ≠ `idle` (or `@Pieuvre`). |
+| **Thread state** | Lifecycle of a Slack thread in Pieuvre: `idle` → `clarifying` → … → `done`. Hybrid monitoring: replies processed only in active states (`clarifying`, `retrieving`, `answering`, `escalating`, `proposing`, `awaiting_confirmation`, `executing`); `@Pieuvre` can reopen from `done`. |
 | **Staleness engine** | Shared module that decides if a Resource is fresh, stale, changed, or missing. Adapters supply metadata only. |
 | **Enrichment** | Structured knowledge injected outside normal indexing — e.g. `#pieuvre-enrichment` block in a PR comment from a scan agent (Cursor/Claude Code). Stored as a Resource with `source_type: github_enrichment`. |
 | **Citation** | A backlink to an exact Resource (Notion URL, GitHub issue, Slack thread). Every factual claim must cite one or say no source exists. |

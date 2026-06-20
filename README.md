@@ -19,11 +19,11 @@
 Pieuvre sits in a short list of selected Slack channels and:
 
 1. **Monitors continuously** — reacts to actionable messages and explicit `@Pieuvre` mentions.
-2. **Classifies intent** — feature, bug, support request, or information about those. Ignores announcements, casual chat, and unrelated noise. Subtypes are inferred freely (no fixed taxonomy in V0).
+2. **Classifies message mode + category** — mode (`question`, `task`, `noise`, `info`) plus work category (`feature`, `bug`, `support`) when relevant. Ignores announcements, casual chat, and unrelated noise.
 3. **Checks context first** — scans Pieuvre's DB for related Notion tasks, GitHub issues/PRs, code references, and prior Slack threads before replying.
 4. **Clarifies in-thread** — when intent is unclear, asks the original requester in the Slack thread (not privately).
-5. **Answers with sources** — replies in-thread when confident, with compact backlinks to exact Notion pages, GitHub issues/PRs/files, and Slack threads. Never fabricates sources; if none exist, says so clearly.
-6. **Escalates when stuck** — asks for clarification first; if still no reliable source, privately DMs the competent person (manual mapping + GitHub/Notion ownership inference), linking back to the original thread.
+5. **Answers with sources** — replies in-thread when confidence score clears threshold, with compact backlinks to exact Notion pages, GitHub issues/PRs/files, and Slack threads. Final cited sources are revalidated before posting (or marked with last-verified fallback if revalidation times out). Never fabricates sources; if none exist, says so clearly.
+6. **Escalates when stuck** — asks for clarification first; if still no reliable source, privately DMs the competent person using project-configured Slack IDs (fallback to global admin), linking back to the original thread.
 7. **Proposes tasks** — after clarification, scans for duplicates and related work, may suggest parent/grouping tasks, includes complexity estimate when available, and asks for **human confirmation** before creating or updating Notion.
 8. **Audits everything** — LangSmith-like traces of reasoning and actions, visible to the internal team only in V0.
 
@@ -84,14 +84,14 @@ sequenceDiagram
 | Area | V0 behaviour |
 |---|---|
 | **Users** | Internal team (you + workmates) |
-| **Slack** | **Single workspace** V0. Continuous monitoring + explicit mention. Short list of channels. Hybrid C thread filter. Placeholder → edit reply. |
-| **GitHub** | **Single org** V0. Read-only. Issues/PRs/docs + PR enrichments; no full code embed. |
+| **Slack** | **Single workspace** V0. Continuous monitoring + explicit mention. Short list of channels. Hybrid C active-state thread filter + `@Pieuvre` reopen from `done`. New thread activity cancels in-flight run and supersedes old placeholder. |
+| **GitHub** | **Single org** V0. Read-only. Issues/PRs/docs + PR enrichments for ranking/context; enrichment is not publicly citable until hardening. |
 | **Notion** | Create and update tasks after confirmation. Complex structural ops delegated to humans. |
 | **Classification** | Flexible inference; no fixed subtype taxonomy. |
 | **Multi-project** | Yes — per-project skeletons + explicit cross-project links from day one. |
 | **Project routing** | Content primary; channel hint secondary. **Ask in thread** if top two projects tie — no silent guess. |
-| **Confidence** | Prompt-driven agent judgment first; hard-coded early returns added later from trace analysis. |
-| **Freshness exposure** | Only when confidence is low or the user asks — not on every reply. |
+| **Confidence** | Prompt-driven with numeric `confidence_score` (0..1); hard-coded guards added later from trace analysis. |
+| **Freshness exposure** | Revalidate only final cited sources before posting; show freshness note when revalidation times out, confidence is low, or the user asks. |
 | **Initial setup** | Manual trigger → broader scan of connected Slack, GitHub, and Notion to validate ingestion. |
 | **Ongoing sync** | Event-driven updates + admin-only full rescan on request (heavily gated, costly). |
 | **Storage** | Normalized extracts + source references by default; raw payload snapshots only when necessary. |

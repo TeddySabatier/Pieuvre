@@ -79,7 +79,7 @@ Related: [PHASES.md](PHASES.md) · [CREDENTIALS.md](CREDENTIALS.md) · [NOTION.m
 | **15** | Slack backfill on scan? | **30 days** default (`slack_backfill_days` override) | [RESEARCH.md §14](../RESEARCH.md) |
 | **16** | Ambiguous project routing? | **Ask in thread** if top two candidates tie | [RESEARCH.md §10](../RESEARCH.md) |
 | **17** | Notion drift timeout? | **30 minutes** before admin DM | [NOTION.md](NOTION.md) |
-| **18** | Thread message processing? | **Hybrid C** — roots + `@Pieuvre` + replies when state ≠ `idle` | [RESEARCH.md §1](../RESEARCH.md) |
+| **18** | Thread message processing? | **Hybrid C** — roots + `@Pieuvre` + replies only in active states; `@Pieuvre` reopens from `done` | [RESEARCH.md §1](../RESEARCH.md) |
 | **19** | Processing UX in Slack? | **Placeholder** “Looking this up…” → `chat.update` final | [RESEARCH.md §1](../RESEARCH.md) |
 | **20** | Failure / escalation copy? | Tell user what happened; **try again** or **name forwarded owner** | [README.md](../README.md) |
 | **21** | Auto-forward on hard error? | **Second failure in 15 min** → auto-escalate | `escalation` in project YAML |

@@ -89,7 +89,7 @@ sequenceDiagram
 | Scenario | Where Pieuvre asks |
 |---|---|
 | Write blocked (task confirmation flow) | **Same Slack thread** first |
-| Background sync detects drift | **DM `owners.notion_admin`** (fallback: `owners.default`) |
+| Background sync detects drift | **DM `owners.notion_admin`** (Slack ID; fallback: `owners.default`, then global admin) |
 | No reply within timeout | **DM project admin** — default **30 minutes** (`notion.drift_prompt_timeout_minutes`) |
 
 **Decided (V0):** 30-minute in-thread wait before admin DM on write-blocked drift. Background sync drift still DMs admin immediately (no thread context).
@@ -115,7 +115,7 @@ task_confirmation:
 | Role | Meaning |
 |---|---|
 | `requester` | Slack user who sent the original actionable message |
-| `project_owners` | Users listed in `owners.slack_ids` (or resolved from `owners.*` handles) |
+| `project_owners` | Slack users explicitly listed in project owner Slack IDs |
 | `thread_participants` | Anyone who posted in the thread (use with care) |
 
 **Preset policies** (optional shorthand in config loader):
@@ -131,7 +131,7 @@ If `task_confirmation` is omitted → default **`requester_or_owners`**.
 
 On unauthorized confirm, Pieuvre replies in-thread (no MCP write):
 
-> Only the requester or project owners can confirm this task. See `owners` in project config.
+> Only the requester or project owners can confirm this task. See project owner Slack IDs in config.
 
 Logged in trace: `{ event: confirmation_denied, user_id, allowed_roles }`.
 
