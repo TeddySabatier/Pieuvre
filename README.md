@@ -6,7 +6,7 @@
 
 **Implementation plan:** [docs/PHASES.md](docs/PHASES.md) — 7 phases (~11–12 weeks), built for seamless linking between ingest → search → answer → enrich → task.
 
-**Decision log:** [docs/DECISIONS.md](docs/DECISIONS.md) — all planning Q&A answers in one place.
+**Decision log:** [docs/DECISIONS.md](docs/DECISIONS.md) — all planning Q&A answers in one place. Seam-level ADRs: [docs/adr/](docs/adr/).
 
 **Domain glossary:** [CONTEXT.md](CONTEXT.md)
 
@@ -195,9 +195,12 @@ External systems are never queried on every user message when a fresh cached cop
 **Read path:** thin adapters per source implementing:
 
 ```typescript
-interface SourceAdapter {
-  getMetadata(resourceId: string): Promise<ResourceMetadata>;
-  getCanonicalContent(resourceId: string): Promise<CanonicalContent>;
+// Canonical seam contract: docs/PHASES.md "Seam contracts"
+interface ReadAdapter {
+  sourceType: SourceType;
+  getMetadata(id: string): Promise<ResourceMetadata>;
+  getCanonicalContent(id: string): Promise<string>;
+  normalize(id: string, raw?: unknown): Promise<NormalizedExtract>;
 }
 ```
 
@@ -332,7 +335,7 @@ Trace
 | Item | Notes |
 |---|---|
 | Task template (Notion DB layout) | Canonical fields defined; copy template per project when onboarding. |
-| Task confirmation auth | **Per-project** `task_confirmation.allowed_roles` in YAML — see [NOTION.md](docs/NOTION.md). |
+| Task confirmation auth *(values only)* | Mechanism **designed** (`task_confirmation.allowed_roles`, default `requester_or_owners`); only per-project role values pending onboarding — see [NOTION.md](docs/NOTION.md). |
 | "Too complex" operation threshold | Derive from trace analysis (open → axial coding). |
 | Non-technical prompt editing | Notion UI for instructions — later. |
 | Prioritization | Weekly polls, cost/priority scoring — later. |

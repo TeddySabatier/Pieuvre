@@ -4,7 +4,7 @@ Consolidated record of all planning Q&A decisions. For implementation detail, fo
 
 **Status:** Locked for V0 design · **Last updated:** planning session through Q24
 
-Related: [PHASES.md](PHASES.md) · [CREDENTIALS.md](CREDENTIALS.md) · [NOTION.md](NOTION.md) · [LLM.md](LLM.md) · [RETENTION.md](RETENTION.md) · [RESEARCH.md](../RESEARCH.md)
+Related: [PHASES.md](PHASES.md) · [CREDENTIALS.md](CREDENTIALS.md) · [NOTION.md](NOTION.md) · [LLM.md](LLM.md) · [RETENTION.md](RETENTION.md) · [RESEARCH.md](../RESEARCH.md) · [adr/](adr/)
 
 ---
 
@@ -89,52 +89,19 @@ Related: [PHASES.md](PHASES.md) · [CREDENTIALS.md](CREDENTIALS.md) · [NOTION.m
 
 ---
 
-## Key behaviors (synthesized)
+## Behavior detail — owned elsewhere
 
-### Slack
+This log records **what** was decided (tables above). The **how** lives in topic docs to avoid duplication/drift. Single source per concern:
 
-- Single workspace; bot in allowlisted channels.
-- **Hybrid C monitoring:** evaluate root messages + `@Pieuvre`; thread replies only when `conversation_state ≠ idle`.
-- Post **“Looking this up…”** → **`chat.update`** with answer, error, or escalation text.
-- **Errors:** brief reason + *Try again or rephrase.*
-- **Escalation:** DM owner + in-thread *“Forwarded to @person (role) — they’ll follow up.”*
-- **Second error** in same thread within **15 min** → auto-forward.
-
-### GitHub
-
-- Single org; one `GITHUB_TOKEN`.
-- Index: issues, PRs, README/docs — **not** full source embedding.
-- Code context: **PR `#pieuvre-enrichment`** blocks from external scan agent.
-
-### Notion
-
-- Per-project `task_database_id` + **`field_map`** (canonical → Notion properties).
-- Writes via **Notion MCP** after text confirmation.
-- Schema drift: ask in thread → **30 min** → DM `owners.notion_admin`.
-- Confirmation auth: **`task_confirmation.allowed_roles`** in project YAML.
-
-### Retrieval & knowledge
-
-- **C+:** BM25 + CrossLinks + pgvector on prose resources only.
-- `resource_id` universal key for citations, graph, cache.
-- Per-project skeleton; cross-project links when evidence exists.
-
-### Credentials & ops
-
-- Projects reference **credential profiles** — never store secrets in YAML.
-- V0 secrets: `.env` / Docker secrets → migrate to SOPS/Vault when scale demands.
-- Costly ops: global admins only (`rescan`, admin CLI).
-
-### LLM
-
-- **ModelRouter** resolves tier per step (`classify` → low, `answer` → high, etc.).
-- Global `config/llm-tiers.yaml`; project overrides in Phase 6.
-
-### Retention
-
-- Traces: **90 days**.
-- Resources/embeddings: until source deleted (cascade purge).
-- Conversation state: 30 days after `done`.
+| Concern | Authoritative doc |
+|---|---|
+| Slack monitoring, placeholder UX, escalation copy | [RESEARCH.md §1](../RESEARCH.md) · [README.md](../README.md) |
+| GitHub read scope + PR enrichment | [PHASES.md §1, §4](PHASES.md) |
+| Notion `field_map`, drift, confirmation auth | [NOTION.md](NOTION.md) |
+| Retrieval (C+), `resource_id`, cross-links | [PHASES.md §2](PHASES.md) · [RESEARCH.md §4](../RESEARCH.md) |
+| Credential profiles, admin ops | [CREDENTIALS.md](CREDENTIALS.md) |
+| LLM reasoning tiers / ModelRouter | [LLM.md](LLM.md) |
+| Retention windows + purge | [RETENTION.md](RETENTION.md) |
 
 ---
 
@@ -212,5 +179,5 @@ Examples: [config/credential-profiles.example.yaml](../config/credential-profile
 When reversing a decision:
 
 1. Update this file with date + rationale.  
-2. Update the linked topic doc.  
-3. Consider an ADR in `docs/adr/` if the change affects seams built in Phase 0.
+2. Update the linked topic doc (single source per concern — see table above).  
+3. If the change affects a Phase 0 seam, add a superseding ADR in [`docs/adr/`](adr/) (don't edit accepted ADRs).

@@ -49,7 +49,7 @@ Legend: ✅ Decided · 🔶 Recommended default · ❓ Needs spike
 
 - **Events API + HTTP webhook** as primary ingress (push-based, fits self-hosted Docker behind reverse proxy).
 - **Socket Mode** only if outbound HTTPS from the host is blocked — adds a persistent WebSocket worker.
-- Buffer incoming events in a lightweight queue (Redis or Postgres `job` table) to absorb bursts and respect rate limits.
+- Buffer incoming events in the **Postgres `jobs` table** (pg-boss) to absorb bursts and respect rate limits — **no Redis in V0** (see [DECISIONS.md Q1](docs/DECISIONS.md)).
 - Model a Slack **thread** (parent + replies) as one analysis unit; store `thread_ts` as the stable resource ID.
 - **Message processing (Hybrid C):**
   - **Always evaluate** new root-level messages in monitored channels.
@@ -85,14 +85,15 @@ Legend: ✅ Decided · 🔶 Recommended default · ❓ Needs spike
 
 - **REST API** for metadata probes (`GET` with `If-None-Match` / `If-Modified-Since` where supported).
 - **GitHub webhooks** (`issues`, `pull_request`, `push`) for event-driven cache invalidation.
-- Index: issues, PRs, README/docs, and selectively source files (respect `.pieuvreignore` or CODEOWNERS paths).
+- Index: issues, PRs, README/docs — **not** full source files in V0. Code context comes from **PR `#pieuvre-enrichment`** blocks (see [PHASES.md §4](docs/PHASES.md#phase-4--enrich)).
 - Shared token with per-repo scope; track `X-RateLimit-*` headers in adapter metrics.
 
-**Code indexing ❓**
+**Code indexing — deferred ⏸**
 
-- [ ] Spike: chunk size for TypeScript/Python mixed repos (512–1024 token chunks, overlap 10–15%).
-- [ ] Spike: embed file path + symbol name in chunk metadata for citation backlinks.
-- [ ] Defer full-repo embedding on every push — invalidate + re-index only changed files.
+Full-repo embedding is **post-V0** (PHASES "Deferred"). The spikes below only apply *if* enrichment proves insufficient:
+
+- [ ] (Deferred) chunk size for TypeScript/Python mixed repos (512–1024 token chunks, overlap 10–15%).
+- [ ] (Deferred) embed file path + symbol name in chunk metadata for citation backlinks.
 
 **GraphQL bulk backfill:** defer until REST backfill proves too slow (>10 repos or >50k files).
 
@@ -162,9 +163,12 @@ interface ResourceMetadata {
   versionMarker?: string;   // ETag, revision, sync token
 }
 
-interface SourceAdapter {
+// Canonical seam contract: docs/PHASES.md "Seam contracts"
+interface ReadAdapter {
+  sourceType: SourceType;
   getMetadata(id: string): Promise<ResourceMetadata>;
   getCanonicalContent(id: string): Promise<string>;  // normalized for hashing
+  normalize(id: string, raw?: unknown): Promise<NormalizedExtract>;
 }
 ```
 
@@ -210,15 +214,16 @@ interface SourceAdapter {
 
 ## 7. Tracing and observability ✅ 🔶
 
-**Status:** LangSmith-like requirement confirmed; tooling choice recommended.
+**Status:** LangSmith-like requirement confirmed. **V0 = Postgres traces** (`traces` / `trace_steps`, Phase 0). LangFuse is an **optional upgrade post–Phase 6**, not a V0 dependency.
 
-**Recommended V0 approach:**
+**Decision (V0):**
 
-| Option | Pros | Cons |
-|---|---|---|
-| **LangFuse (self-hosted)** ✅ | Fits self-hosted deployment; full data control | Extra Docker service |
-| LangSmith (cloud) | Best UX, zero ops | Data leaves your infra |
-| Custom OTel + Postgres | Maximum control | Most build effort |
+| Option | Pros | Cons | V0 |
+|---|---|---|---|
+| **Postgres traces** | One DB; co-located with resources; zero extra service | Build UI/queries yourself | ✅ V0 |
+| LangFuse (self-hosted) | Fits self-hosted; full data control | Extra Docker service | 🔶 optional post–Phase 6 |
+| LangSmith (cloud) | Best UX, zero ops | Data leaves your infra | ✗ |
+| Custom OTel + Postgres | Maximum control | Most build effort | ✗ |
 
 **Trace schema (minimum):**
 
@@ -230,8 +235,8 @@ confidence, sources_used[], actions_taken[], escalation_triggered
 
 **Spike needed ❓**
 
-- [ ] Deploy LangFuse alongside Pieuvre in docker-compose.
-- [ ] Wire trace export from agent orchestrator and MCP tool calls.
+- [ ] (V0) Define `traces` / `trace_steps` query patterns for replaying a run.
+- [ ] (Post–Phase 6, optional) Deploy LangFuse in docker-compose + wire trace export.
 
 ---
 
@@ -398,11 +403,10 @@ Tune threshold from traces in Phase 6.
 | P0 | Slack Events API behind self-hosted reverse proxy | Spike |
 | P0 | PostgreSQL + pgvector schema + hybrid retrieval POC | Spike |
 | P0 | Notion MCP server selection + write flow | Spike |
-| P1 | LangFuse docker-compose + trace wiring | Spike |
 | P1 | Agent structured output schema + 20-message classification test | Spike |
-| P1 | GitHub webhook + selective file re-index | Implementation |
+| P1 | GitHub webhook + selective doc re-index | Implementation |
 | P2 | Embedding model benchmark on your content | Spike |
 | P2 | Open coding prep (`delegation_reason` in traces) | Preparation |
-| ⏸ | Notion workspace/schema mapping | Blocked on config |
-| ⏸ | Task template fields | Blocked on config |
-| ⏸ | Task confirmation authorization | Blocked on config |
+| ⏸ | Notion workspace/schema mapping (values only — model decided) | Blocked on config |
+| ⏸ | Task template field values (canonical model decided) | Blocked on config |
+| ⏸ (post P6) | LangFuse docker-compose + trace wiring (optional upgrade) | Spike |

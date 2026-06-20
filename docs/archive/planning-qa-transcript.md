@@ -1,3 +1,7 @@
+> **ARCHIVED — historical planning transcript.** Not a source of truth.
+> Distilled decisions live in [`docs/DECISIONS.md`](../DECISIONS.md); open spikes in [`RESEARCH.md`](../../RESEARCH.md).
+> Kept only for provenance of how V0 decisions were reached.
+
 <img src="https://r2cdn.perplexity.ai/pplx-full-logo-primary-dark%402x.png" style="height:64px;margin-right:32px"/>
 
 # I want you to question me to precise the plan. One question at a time
